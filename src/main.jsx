@@ -14,6 +14,8 @@ import {
   Mail,
   Loader2,
   CheckCircle2,
+  Image as ImageIcon,
+  X,
 } from 'lucide-react';
 import { hasSupabaseConfig, supabase } from './lib/supabaseClient';
 import './styles.css';
@@ -80,6 +82,7 @@ function GardenApp({ session }) {
   const [beds, setBeds] = useState([]);
   const [plants, setPlants] = useState([]);
   const [logs, setLogs] = useState([]);
+  const [photos, setPhotos] = useState([]);
   const [species, setSpecies] = useState([]);
   const [toast, setToast] = useState('');
 
@@ -111,12 +114,14 @@ function GardenApp({ session }) {
       const [bedsRes, plantsRes, logsRes, speciesRes] = await Promise.all([
         supabase.from('beds').select('*').eq('garden_id', activeGarden.id).order('position_order', { ascending: true }),
         supabase.from('plants').select('*, beds(name)').eq('garden_id', activeGarden.id).order('created_at', { ascending: false }),
-        supabase.from('logs').select('*').eq('garden_id', activeGarden.id).order('happened_at', { ascending: false }).limit(8),
+        supabase.from('logs').select('*').eq('garden_id', activeGarden.id).order('happened_at', { ascending: false }).limit(12),
+        supabase.from('photos').select('*').eq('garden_id', activeGarden.id).order('taken_at', { ascending: false }).limit(12),
         supabase.from('plant_species').select('*').order('common_name', { ascending: true }),
       ]);
       setBeds(bedsRes.data || []);
       setPlants(plantsRes.data || []);
       setLogs(logsRes.data || []);
+      setPhotos(photosRes.data || []);
       setSpecies(speciesRes.data || []);
     }
 
@@ -131,17 +136,17 @@ function GardenApp({ session }) {
   const content = useMemo(() => {
     if (loading) return <LoadingPage text="正在看今天的菜地状态。" />;
     if (!garden) return <Onboarding session={session} onDone={refreshData} />;
-    if (tab === 'today') return <Today garden={garden} beds={beds} plants={plants} logs={logs} onRefresh={refreshData} setToast={setToast} />;
+    if (tab === 'today') return <Today garden={garden} beds={beds} plants={plants} logs={logs} photos={photos} onRefresh={refreshData} setToast={setToast} />;
     if (tab === 'map') return <GardenMap garden={garden} beds={beds} plants={plants} onRefresh={refreshData} setToast={setToast} />;
     if (tab === 'growth') return <Growth garden={garden} beds={beds} plants={plants} species={species} onRefresh={refreshData} setToast={setToast} />;
-    return <Seasons garden={garden} plants={plants} logs={logs} />;
-  }, [loading, garden, tab, beds, plants, logs, species]);
+    return <Seasons garden={garden} plants={plants} logs={logs} photos={photos} />;
+  }, [loading, garden, tab, beds, plants, logs, photos, species]);
 
   return (
     <AppShell>
       <Header garden={garden} userEmail={session.user.email} />
       <div className="content">{content}</div>
-      {garden && <CaptureButton garden={garden} onRefresh={refreshData} setToast={setToast} />}
+      {garden && <CaptureButton garden={garden} beds={beds} plants={plants} onRefresh={refreshData} setToast={setToast} />}
       {garden && <TabBar current={tab} onChange={setTab} />}
       {toast && <Toast text={toast} onClose={() => setToast('')} />}
     </AppShell>
@@ -327,7 +332,7 @@ function Onboarding({ session, onDone }) {
   );
 }
 
-function Today({ garden, beds, plants, logs, setToast, onRefresh }) {
+function Today({ garden, beds, plants, logs, photos, setToast, onRefresh }) {
   const hasPlants = plants.length > 0;
   const issuePlant = plants.find((p) => p.status === 'issue');
   const title = hasPlants ? (issuePlant ? '有一件事值得看一眼。' : '菜地今天还好。') : '菜地还在认识你们。';
@@ -366,6 +371,13 @@ function Today({ garden, beds, plants, logs, setToast, onRefresh }) {
         <h3>{hasPlants ? '下次去，先拍一张现在的样子。' : '先在「生长」里添加第一种植物。'}</h3>
         <p>园丁记得：{garden.preferences?.style?.join('、') || '这块地要省心、好看、孩子能参与'}。</p>
       </div>
+
+      {photos.length > 0 && <div className="photo-strip-card">
+        <p className="eyebrow">最近照片</p>
+        <div className="photo-strip">
+          {photos.slice(0, 4).map((photo) => <PhotoThumb key={photo.id} photo={photo} />)}
+        </div>
+      </div>}
 
       <div className="quick-actions">
         <button onClick={() => quickLog('watered', '浇水了')}>浇水了</button>
@@ -465,19 +477,26 @@ function Growth({ garden, beds, plants, species, setToast, onRefresh }) {
   );
 }
 
-function Seasons({ plants, logs }) {
+function Seasons({ plants, logs, photos }) {
   const highlights = [];
   if (plants.length) highlights.push(`${plants.length} 种植物被记住了。`);
   if (logs.length) highlights.push(`这周有 ${logs.length} 条新记录。`);
+  if (photos.length) highlights.push(`这周有 ${photos.length} 张照片加入四季。`);
   if (!highlights.length) highlights.push('第一张照片会成为这一年的开头。');
 
   return (
     <section className="page">
       <div className="letter-card">
         <p className="eyebrow">菜地来信</p>
-        <h2>{logs.length ? '这周，菜地有了新的记录。' : '四季还没开始。'}</h2>
+        <h2>{logs.length || photos.length ? '这周，菜地有了新的记录。' : '四季还没开始。'}</h2>
         <ul>{highlights.map((note) => <li key={note}>{note}</li>)}</ul>
       </div>
+      {photos.length > 0 && <div className="quiet-card">
+        <p className="eyebrow">这一周的照片</p>
+        <div className="photo-grid">
+          {photos.slice(0, 6).map((photo) => <PhotoThumb key={photo.id} photo={photo} />)}
+        </div>
+      </div>}
       <div className="quiet-card">
         <p className="eyebrow">封季预览</p>
         <h3>2026 夏｜一天菜园</h3>
@@ -487,22 +506,184 @@ function Seasons({ plants, logs }) {
   );
 }
 
-function CaptureButton({ garden, onRefresh, setToast }) {
-  async function handleCapture() {
-    const { data: userData } = await supabase.auth.getUser();
-    const { error } = await supabase.from('logs').insert({
-      garden_id: garden.id,
-      created_by: userData.user.id,
-      log_type: 'photo_taken',
-      title: '拍了一张今天的样子',
-      auto_text: '今天的菜地，留下来了。',
-      happened_at: new Date().toISOString(),
-    });
-    if (error) setToast(`这张照片还没保存上：${error.message}`);
-    else { setToast('今天的菜地，留下来了。图片上传下一步接入。'); onRefresh(); }
+function PhotoThumb({ photo }) {
+  const [url, setUrl] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadSignedUrl() {
+      const { data } = await supabase.storage.from(photo.storage_bucket || 'garden-photos').createSignedUrl(photo.storage_path, 60 * 20);
+      if (!cancelled) setUrl(data?.signedUrl || '');
+    }
+    if (photo.storage_path) loadSignedUrl();
+    return () => { cancelled = true; };
+  }, [photo.storage_bucket, photo.storage_path]);
+
+  return <div className="photo-thumb">{url ? <img src={url} alt={photo.caption || '菜地照片'} /> : <ImageIcon size={22} />}</div>;
+}
+
+function CaptureButton({ garden, beds, plants, onRefresh, setToast }) {
+  const [open, setOpen] = useState(false);
+  const [file, setFile] = useState(null);
+  const [preview, setPreview] = useState('');
+  const [targetType, setTargetType] = useState('garden');
+  const [targetId, setTargetId] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  function reset() {
+    setFile(null);
+    setPreview('');
+    setTargetType('garden');
+    setTargetId('');
+    setBusy(false);
   }
 
-  return <button className="capture-button" onClick={handleCapture}><Camera size={20} />拍一下</button>;
+  function close() {
+    reset();
+    setOpen(false);
+  }
+
+  function handleFile(event) {
+    const nextFile = event.target.files?.[0];
+    if (!nextFile) return;
+    setFile(nextFile);
+    setPreview(URL.createObjectURL(nextFile));
+    setOpen(true);
+    event.target.value = '';
+  }
+
+  async function uploadPhoto() {
+    if (!file) return;
+    setBusy(true);
+    try {
+      const { data: userData } = await supabase.auth.getUser();
+      const user = userData.user;
+      if (!user) throw new Error('还没登录。');
+
+      const photoId = crypto.randomUUID();
+      const now = new Date();
+      const yyyy = String(now.getFullYear());
+      const mm = String(now.getMonth() + 1).padStart(2, '0');
+      const storagePath = `${garden.id}/${yyyy}/${mm}/${photoId}.jpg`;
+      const compressed = await compressImage(file, 1600, 0.82);
+
+      const { error: uploadError } = await supabase.storage
+        .from('garden-photos')
+        .upload(storagePath, compressed, { contentType: 'image/jpeg', upsert: false });
+      if (uploadError) throw uploadError;
+
+      const bedId = targetType === 'bed' ? targetId || null : null;
+      const plantId = targetType === 'plant' ? targetId || null : null;
+      const caption = targetType === 'plant'
+        ? `今天的${plants.find((p) => p.id === targetId)?.name || '植物'}，记住了。`
+        : targetType === 'bed'
+          ? `今天的${beds.find((b) => b.id === targetId)?.name || '这块地'}，留下来了。`
+          : targetType === 'child'
+            ? '一天的小发现，记住了。'
+            : '今天的菜地，留下来了。';
+
+      const { data: photoData, error: photoError } = await supabase.from('photos').insert({
+        id: photoId,
+        garden_id: garden.id,
+        bed_id: bedId,
+        plant_id: plantId,
+        uploaded_by: user.id,
+        storage_bucket: 'garden-photos',
+        storage_path: storagePath,
+        photo_type: targetType === 'child' ? 'child_discovery' : targetType === 'garden' ? 'whole_garden' : 'unknown',
+        caption,
+        taken_at: now.toISOString(),
+        is_season_material: true,
+      }).select().single();
+      if (photoError) throw photoError;
+
+      const { error: logError } = await supabase.from('logs').insert({
+        garden_id: garden.id,
+        bed_id: bedId,
+        plant_id: plantId,
+        photo_id: photoData.id,
+        created_by: user.id,
+        log_type: targetType === 'child' ? 'child_discovery' : 'photo_taken',
+        title: caption,
+        auto_text: caption,
+        happened_at: now.toISOString(),
+      });
+      if (logError) throw logError;
+
+      if (targetType === 'child') {
+        await supabase.from('child_discoveries').insert({
+          garden_id: garden.id,
+          photo_id: photoData.id,
+          title: '一天的小发现',
+          body: caption,
+          discovered_at: now.toISOString(),
+        });
+      }
+
+      setToast(caption);
+      close();
+      onRefresh();
+    } catch (error) {
+      setToast(`这张照片还没保存上：${error.message}`);
+      setBusy(false);
+    }
+  }
+
+  return <>
+    <label className="capture-button"><Camera size={20} />拍一下<input className="hidden-input" type="file" accept="image/*" capture="environment" onChange={handleFile} /></label>
+    {open && <div className="modal-backdrop">
+      <div className="capture-modal">
+        <div className="modal-head">
+          <div><p className="eyebrow">拍一下</p><h3>这张照片记到哪里？</h3></div>
+          <button className="icon-button" onClick={close}><X size={18} /></button>
+        </div>
+        {preview && <img className="capture-preview" src={preview} alt="准备保存的菜地照片" />}
+        <div className="form-stack">
+          <label>归属
+            <select value={`${targetType}:${targetId}`} onChange={(e) => {
+              const [type, id = ''] = e.target.value.split(':');
+              setTargetType(type);
+              setTargetId(id);
+            }}>
+              <option value="garden:">整个菜园</option>
+              {beds.map((bed) => <option key={bed.id} value={`bed:${bed.id}`}>{bed.name}</option>)}
+              {plants.map((plant) => <option key={plant.id} value={`plant:${plant.id}`}>{plant.name}</option>)}
+              <option value="child:">一天的小发现</option>
+            </select>
+          </label>
+          <button className="primary-button" onClick={uploadPhoto} disabled={busy}>{busy ? <Loader2 className="spin" size={18} /> : <ImageIcon size={18} />} 保存到四季</button>
+          <button className="secondary-button" onClick={close} disabled={busy}>先不保存</button>
+        </div>
+      </div>
+    </div>}
+  </>;
+}
+
+function compressImage(file, maxSide = 1600, quality = 0.82) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    const objectUrl = URL.createObjectURL(file);
+    image.onload = () => {
+      const scale = Math.min(1, maxSide / Math.max(image.width, image.height));
+      const width = Math.round(image.width * scale);
+      const height = Math.round(image.height * scale);
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(image, 0, 0, width, height);
+      canvas.toBlob((blob) => {
+        URL.revokeObjectURL(objectUrl);
+        if (!blob) reject(new Error('图片压缩失败。'));
+        else resolve(blob);
+      }, 'image/jpeg', quality);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error('图片读取失败。'));
+    };
+    image.src = objectUrl;
+  });
 }
 
 function TabBar({ current, onChange }) {

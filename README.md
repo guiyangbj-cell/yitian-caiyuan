@@ -1,29 +1,39 @@
-# 一天菜园 v0.2 Auth/Data 版
+# 一天菜园 v0.3 Photo Upload
 
-本版本在 v0.1 前台原型基础上接入 Supabase：
+本版本在 v0.2 Auth/Data 基础上新增「拍一下」真实图片上传：
 
-- Email OTP / Magic Link 登录
-- 创建「一天菜园」
-- 创建默认区域
-- 从 Supabase 读取地图、生长、最近记录
-- 添加植物
-- 一键记录
+- 使用 Supabase Auth 登录
+- 从 Supabase 读取/写入菜园、区域、植物、记录
+- 点击「拍一下」选择或拍摄图片
+- 前端将图片压缩到长边约 1600px
+- 上传到 Supabase Storage `garden-photos`
+- 在 `photos` 表写入图片元数据
+- 在 `logs` 表写入 `photo_taken` 或 `child_discovery` 记录
+- 今天页和四季页展示最近照片
+
+暂未接入豆包视觉识别；v0.4 会在图片上传链路稳定后再接入视觉分析。
 
 ## 环境变量
 
-Netlify / 本地都需要：
+Netlify 需要配置：
 
 ```bash
-VITE_SUPABASE_URL=https://你的项目.supabase.co
-VITE_SUPABASE_ANON_KEY=你的 publishable key 或 anon public key
+VITE_SUPABASE_URL=你的 Supabase Project URL
+VITE_SUPABASE_ANON_KEY=你的 Supabase publishable/anon key
 ```
 
-## Netlify
+不要把 service_role、DeepSeek、豆包 API Key 放到前端。
 
-- Build command: `npm run build`
-- Publish directory: `dist`
+## Netlify 构建
 
-## 安全边界
+Build command:
 
-前端只允许使用 `VITE_SUPABASE_URL` 和 `VITE_SUPABASE_ANON_KEY`。
-不要把 `service_role`、`DEEPSEEK_API_KEY`、`DOUBAO_API_KEY` 放进前端。
+```bash
+npm run build
+```
+
+Publish directory:
+
+```bash
+dist
+```
