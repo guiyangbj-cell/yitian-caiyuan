@@ -1,162 +1,482 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Camera, Map, Sprout, CalendarDays, Home, Leaf, CloudSun, CheckCircle2, Plus, ChevronRight } from 'lucide-react';
+import {
+  Camera,
+  Map,
+  Sprout,
+  CalendarDays,
+  Home,
+  Leaf,
+  CloudSun,
+  Plus,
+  ChevronRight,
+  LogOut,
+  Mail,
+  Loader2,
+  CheckCircle2,
+} from 'lucide-react';
+import { hasSupabaseConfig, supabase } from './lib/supabaseClient';
 import './styles.css';
 
-const garden = {
-  name: '一天菜园',
-  slogan: '记录一块地，照看一家人的四季。',
-  place: '北京怀柔 · 长搭营地',
-  lastVisit: '6 天前',
-  status: '该去看看了',
-  statusText: '连续几天没雨，A 畦番茄正在结果，已经 8 天没有浇水记录。',
-  priority: '下次去，先看 A 畦番茄的土，再决定要不要深浇。',
-  weatherNote: '这两天有风，盆栽会比地栽干得快。',
+const DEFAULT_BEDS = [
+  { name: 'A 畦', sunlight: '全天晒', water_access: '近', bed_type: '种菜', position_order: 1 },
+  { name: 'B 畦', sunlight: '半日晒', water_access: '中', bed_type: '种菜', position_order: 2 },
+  { name: '花边', sunlight: '半日晒', water_access: '中', bed_type: '种花', position_order: 3 },
+  { name: '一天的小角落', sunlight: '半日晒', water_access: '近', bed_type: '给一天观察', position_order: 4 },
+];
+
+const STAGE_LABELS = {
+  just_planted: '刚种下',
+  settling: '缓苗中',
+  growing: '生长期',
+  flowering: '开花了',
+  fruiting: '正在结果',
+  harvestable: '可采收',
+  finished: '结束',
+  unknown: '不确定',
 };
 
-const beds = [
-  { name: 'A 畦', detail: '番茄 · 罗勒', light: '全天晒', water: '离水桶近', note: '番茄结果期，优先看水分。' },
-  { name: 'B 畦', detail: '黄瓜 · 生菜', light: '半日晒', water: '取水方便', note: '黄瓜叶背下次看一眼。' },
-  { name: '花边', detail: '百日草 · 波斯菊', light: '下午晒', water: '偏干', note: '适合拍照，也适合一天观察。' },
-  { name: '盆栽区', detail: '薄荷 · 迷迭香', light: '半日晒', water: '易干', note: '薄荷建议继续盆栽，别下地。' },
-];
-
-const plants = [
-  { name: 'A 畦番茄', phase: '正在结果', last: '7 月 5 日深浇水', next: '看土壤湿度和叶背', tag: '优先' },
-  { name: '黄瓜', phase: '爬藤期', last: '4 天前发现叶片发黄', next: '补拍叶背，不急着用药', tag: '看一眼' },
-  { name: '薄荷', phase: '稳定生长', last: '一天闻出了薄荷味', next: '保持盆栽', tag: '安心' },
-];
-
-const seasonNotes = [
-  '番茄开始挂果，黄瓜叶子舒展开了。',
-  '花边多了一点颜色。',
-  '一天闻出了薄荷味。',
-  '下次去，带一卷绑枝绳就够了。',
-];
-
 function App() {
+  const [session, setSession] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
+  useEffect(() => {
+    if (!hasSupabaseConfig) {
+      setAuthLoading(false);
+      return;
+    }
+
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session);
+      setAuthLoading(false);
+    });
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession);
+    });
+
+    return () => listener.subscription.unsubscribe();
+  }, []);
+
+  if (!hasSupabaseConfig) {
+    return <AppShell><SetupMissing /></AppShell>;
+  }
+
+  if (authLoading) {
+    return <AppShell><LoadingPage text="正在回到一天菜园。" /></AppShell>;
+  }
+
+  if (!session) {
+    return <AppShell><LoginPage /></AppShell>;
+  }
+
+  return <GardenApp session={session} />;
+}
+
+function GardenApp({ session }) {
   const [tab, setTab] = useState('today');
+  const [loading, setLoading] = useState(true);
+  const [garden, setGarden] = useState(null);
+  const [beds, setBeds] = useState([]);
+  const [plants, setPlants] = useState([]);
+  const [logs, setLogs] = useState([]);
+  const [species, setSpecies] = useState([]);
+  const [toast, setToast] = useState('');
+
+  async function refreshData() {
+    setLoading(true);
+    const user = session.user;
+
+    await supabase.from('profiles').upsert({
+      id: user.id,
+      display_name: user.email?.split('@')[0] || '家人',
+      role_label: '家人',
+    });
+
+    const { data: gardens, error: gardensError } = await supabase
+      .from('gardens')
+      .select('*')
+      .order('created_at', { ascending: true });
+
+    if (gardensError) {
+      setToast(`还没取到菜园：${gardensError.message}`);
+      setLoading(false);
+      return;
+    }
+
+    const activeGarden = gardens?.[0] || null;
+    setGarden(activeGarden);
+
+    if (activeGarden) {
+      const [bedsRes, plantsRes, logsRes, speciesRes] = await Promise.all([
+        supabase.from('beds').select('*').eq('garden_id', activeGarden.id).order('position_order', { ascending: true }),
+        supabase.from('plants').select('*, beds(name)').eq('garden_id', activeGarden.id).order('created_at', { ascending: false }),
+        supabase.from('logs').select('*').eq('garden_id', activeGarden.id).order('happened_at', { ascending: false }).limit(8),
+        supabase.from('plant_species').select('*').order('common_name', { ascending: true }),
+      ]);
+      setBeds(bedsRes.data || []);
+      setPlants(plantsRes.data || []);
+      setLogs(logsRes.data || []);
+      setSpecies(speciesRes.data || []);
+    }
+
+    setLoading(false);
+  }
+
+  useEffect(() => {
+    refreshData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session.user.id]);
+
   const content = useMemo(() => {
-    if (tab === 'today') return <Today />;
-    if (tab === 'map') return <GardenMap />;
-    if (tab === 'growth') return <Growth />;
-    return <Seasons />;
-  }, [tab]);
+    if (loading) return <LoadingPage text="正在看今天的菜地状态。" />;
+    if (!garden) return <Onboarding session={session} onDone={refreshData} />;
+    if (tab === 'today') return <Today garden={garden} beds={beds} plants={plants} logs={logs} onRefresh={refreshData} setToast={setToast} />;
+    if (tab === 'map') return <GardenMap garden={garden} beds={beds} plants={plants} onRefresh={refreshData} setToast={setToast} />;
+    if (tab === 'growth') return <Growth garden={garden} beds={beds} plants={plants} species={species} onRefresh={refreshData} setToast={setToast} />;
+    return <Seasons garden={garden} plants={plants} logs={logs} />;
+  }, [loading, garden, tab, beds, plants, logs, species]);
 
   return (
-    <div className="app-shell">
-      <main className="phone-frame">
-        <Header />
-        <div className="content">{content}</div>
-        <CaptureButton />
-        <TabBar current={tab} onChange={setTab} />
-      </main>
-    </div>
+    <AppShell>
+      <Header garden={garden} userEmail={session.user.email} />
+      <div className="content">{content}</div>
+      {garden && <CaptureButton garden={garden} onRefresh={refreshData} setToast={setToast} />}
+      {garden && <TabBar current={tab} onChange={setTab} />}
+      {toast && <Toast text={toast} onClose={() => setToast('')} />}
+    </AppShell>
   );
 }
 
-function Header() {
+function AppShell({ children }) {
+  return <div className="app-shell"><main className="phone-frame">{children}</main></div>;
+}
+
+function Header({ garden, userEmail }) {
   return (
     <header className="header">
       <div>
-        <p className="eyebrow">{garden.place}</p>
-        <h1>{garden.name}</h1>
+        <p className="eyebrow">{garden ? `${garden.location_label} · ${garden.scene_label}` : '北京怀柔 · 长搭营地'}</p>
+        <h1>{garden?.name || '一天菜园'}</h1>
       </div>
-      <div className="small-seal">第一年</div>
+      <button className="small-seal" onClick={() => supabase.auth.signOut()} title={userEmail || '退出'}>
+        <LogOut size={14} /> 第一年
+      </button>
     </header>
   );
 }
 
-function Today() {
+function LoginPage() {
+  const [email, setEmail] = useState('');
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  async function handleLogin(event) {
+    event.preventDefault();
+    setError('');
+    setBusy(true);
+
+    const { error: signInError } = await supabase.auth.signInWithOtp({
+      email,
+      options: { emailRedirectTo: window.location.origin },
+    });
+
+    setBusy(false);
+    if (signInError) {
+      setError(signInError.message);
+      return;
+    }
+    setSent(true);
+  }
+
+  return (
+    <section className="login-page">
+      <div className="login-card">
+        <p className="eyebrow">回到一天菜园</p>
+        <h1>这是你们家的菜地。</h1>
+        <p>登录后，照片、记录和四季都会留在这里。</p>
+        {sent ? (
+          <div className="success-box">
+            <CheckCircle2 size={24} />
+            <div>
+              <h3>邮件已经发出。</h3>
+              <p>打开邮箱里的登录链接，就能回到一天菜园。</p>
+            </div>
+          </div>
+        ) : (
+          <form onSubmit={handleLogin} className="form-stack">
+            <label>
+              邮箱
+              <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" type="email" required />
+            </label>
+            {error && <p className="error-text">{error}</p>}
+            <button className="primary-button" disabled={busy} type="submit">
+              {busy ? <Loader2 className="spin" size={18} /> : <Mail size={18} />} 继续
+            </button>
+          </form>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function Onboarding({ session, onDone }) {
+  const [name, setName] = useState('一天菜园');
+  const [location, setLocation] = useState('北京怀柔');
+  const [scene, setScene] = useState('长搭露营营地');
+  const [preferences, setPreferences] = useState(['好看一点', '省心一点', '孩子能参与']);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const options = ['好看一点', '省心一点', '孩子能参与', '多收一点菜', '多种花', '都想要，但别太麻烦'];
+
+  function togglePreference(item) {
+    setPreferences((current) => current.includes(item) ? current.filter((x) => x !== item) : [...current, item]);
+  }
+
+  async function createGarden() {
+    setBusy(true);
+    setError('');
+
+    const userId = session.user.id;
+    const { data: gardenData, error: gardenError } = await supabase
+      .from('gardens')
+      .insert({
+        name,
+        location_label: location,
+        scene_label: scene,
+        created_by: userId,
+        preferences: {
+          style: preferences.length ? preferences : ['省心一点', '孩子能参与', '都想要，但别太麻烦'],
+          recording_mode: 'low_friction',
+          garden_personality: 'quiet_precise_warm',
+        },
+      })
+      .select()
+      .single();
+
+    if (gardenError) {
+      setError(gardenError.message);
+      setBusy(false);
+      return;
+    }
+
+    const { error: memberError } = await supabase.from('garden_members').insert({
+      garden_id: gardenData.id,
+      user_id: userId,
+      role: 'owner',
+    });
+
+    if (memberError) {
+      setError(memberError.message);
+      setBusy(false);
+      return;
+    }
+
+    await supabase.from('beds').insert(DEFAULT_BEDS.map((bed) => ({ ...bed, garden_id: gardenData.id })));
+    await supabase.from('logs').insert({
+      garden_id: gardenData.id,
+      created_by: userId,
+      log_type: 'note',
+      title: '一天菜园开园了',
+      auto_text: '从今天开始，这块地会有自己的四季。',
+      happened_at: new Date().toISOString(),
+    });
+    await supabase.from('ai_memories').insert({
+      garden_id: gardenData.id,
+      memory_type: 'preference',
+      content: { style: preferences },
+      summary_text: `用户希望这块地${preferences.join('、')}，不喜欢复杂记录和频繁提醒。`,
+    });
+
+    setBusy(false);
+    onDone();
+  }
+
+  return (
+    <section className="page onboarding">
+      <div className="hero-card">
+        <p className="eyebrow">建一个菜园</p>
+        <h2>这是一天菜园的第一年。</h2>
+        <p className="lead">先把这块地交给我们记住。</p>
+      </div>
+
+      <div className="quiet-card form-stack">
+        <label>菜园名<input value={name} onChange={(e) => setName(e.target.value)} /></label>
+        <label>位置<input value={location} onChange={(e) => setLocation(e.target.value)} /></label>
+        <label>场景<input value={scene} onChange={(e) => setScene(e.target.value)} /></label>
+      </div>
+
+      <div className="quiet-card">
+        <p className="eyebrow">你希望它更像什么？</p>
+        <div className="chip-grid">
+          {options.map((option) => (
+            <button key={option} className={preferences.includes(option) ? 'chip active' : 'chip'} onClick={() => togglePreference(option)}>
+              {option}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {error && <p className="error-text">{error}</p>}
+      <button className="primary-button" onClick={createGarden} disabled={busy}>
+        {busy ? <Loader2 className="spin" size={18} /> : <CheckCircle2 size={18} />} 完成开园
+      </button>
+    </section>
+  );
+}
+
+function Today({ garden, beds, plants, logs, setToast, onRefresh }) {
+  const hasPlants = plants.length > 0;
+  const issuePlant = plants.find((p) => p.status === 'issue');
+  const title = hasPlants ? (issuePlant ? '有一件事值得看一眼。' : '菜地今天还好。') : '菜地还在认识你们。';
+  const body = hasPlants
+    ? issuePlant
+      ? `${issuePlant.name} 还在待观察。下次去，先补拍一张清楚的照片，别急着用药。`
+      : '目前没有待处理的问题。下次去，先拍一张今天的样子就好。'
+    : '先添加几种植物，园丁才知道要照看谁。';
+
+  async function quickLog(type, titleText) {
+    const { error } = await supabase.from('logs').insert({
+      garden_id: garden.id,
+      created_by: (await supabase.auth.getUser()).data.user.id,
+      log_type: type,
+      title: titleText,
+      happened_at: new Date().toISOString(),
+    });
+    if (error) setToast(`这次还没记上：${error.message}`);
+    else {
+      setToast('记下了。下次判断会把这次记录算进去。');
+      onRefresh();
+    }
+  }
+
   return (
     <section className="page">
       <div className="hero-card">
         <p className="eyebrow">菜地状态</p>
-        <h2>{garden.status}</h2>
-        <p className="lead">{garden.statusText}</p>
-        <div className="reason-row">
-          <CloudSun size={17} />
-          <span>{garden.weatherNote}</span>
-        </div>
+        <h2>{title}</h2>
+        <p className="lead">{body}</p>
+        <div className="reason-row"><CloudSun size={17} /><span>天气还没接入。下一步会让这里根据怀柔天气变化。</span></div>
       </div>
 
       <div className="quiet-card">
         <p className="eyebrow">最重要的一件事</p>
-        <h3>{garden.priority}</h3>
-        <p>园丁记得：你们上次来是 {garden.lastVisit}。</p>
+        <h3>{hasPlants ? '下次去，先拍一张现在的样子。' : '先在「生长」里添加第一种植物。'}</h3>
+        <p>园丁记得：{garden.preferences?.style?.join('、') || '这块地要省心、好看、孩子能参与'}。</p>
+      </div>
+
+      <div className="quick-actions">
+        <button onClick={() => quickLog('watered', '浇水了')}>浇水了</button>
+        <button onClick={() => quickLog('weeded', '除草了')}>除草了</button>
+        <button onClick={() => quickLog('harvested', '采收了')}>采收了</button>
       </div>
 
       <div className="child-card">
-        <p className="eyebrow">一天的小发现</p>
-        <h3>下次可以让一天找一颗还没变红的小番茄。</h3>
-        <p>这是一种很好的“等待”练习。</p>
+        <p className="eyebrow">最近</p>
+        {logs.length ? logs.map((log) => <p key={log.id}>· {formatDate(log.happened_at)}｜{log.title}</p>) : <p>菜地还没留下记录。先拍一张今天的样子。</p>}
       </div>
     </section>
   );
 }
 
-function GardenMap() {
+function GardenMap({ beds, plants, setToast, onRefresh }) {
+  const [adding, setAdding] = useState(false);
+  const [name, setName] = useState('');
+
+  async function addBed() {
+    if (!name.trim()) return;
+    const gardenId = beds[0]?.garden_id || plants[0]?.garden_id;
+    if (!gardenId) return;
+    const { error } = await supabase.from('beds').insert({ garden_id: gardenId, name, sunlight: '不确定', water_access: '不确定', bed_type: '混合', position_order: beds.length + 1 });
+    if (error) setToast(`新区还没建好：${error.message}`);
+    else { setToast('新区建好了。以后再慢慢细化。'); setAdding(false); setName(''); onRefresh(); }
+  }
+
   return (
     <section className="page">
-      <div className="section-title">
-        <h2>地图</h2>
-        <p>这块地是怎么被安排的。</p>
-      </div>
+      <div className="section-title"><h2>地图</h2><p>这块地是怎么被安排的。</p></div>
       <div className="map-grid">
-        {beds.map((bed) => (
-          <div className="bed-card" key={bed.name}>
-            <div className="bed-top">
-              <h3>{bed.name}</h3>
-              <span>{bed.light}</span>
-            </div>
-            <p className="bed-detail">{bed.detail}</p>
-            <p>{bed.water}</p>
-            <p className="soft-note">{bed.note}</p>
-          </div>
-        ))}
+        {beds.map((bed) => {
+          const bedPlants = plants.filter((p) => p.bed_id === bed.id).map((p) => p.name).join('、') || '还没添加植物';
+          return <div className="bed-card" key={bed.id}>
+            <div className="bed-top"><h3>{bed.name}</h3><span>{bed.sunlight}</span></div>
+            <p className="bed-detail">现在：{bedPlants}</p>
+            <p>水源：{bed.water_access}</p>
+            <p className="soft-note">{bed.bed_type === '给一天观察' ? '适合放一盆薄荷，或者种几株向日葵。' : '先保持简单，后面再让园丁给布局建议。'}</p>
+          </div>;
+        })}
       </div>
-      <button className="secondary-button"><Plus size={16}/> 建一个新区</button>
+      {adding ? <div className="quiet-card form-row"><input value={name} onChange={(e) => setName(e.target.value)} placeholder="比如：香草区" /><button onClick={addBed}>保存</button></div> : <button className="secondary-button" onClick={() => setAdding(true)}><Plus size={16}/> 建一个新区</button>}
     </section>
   );
 }
 
-function Growth() {
+function Growth({ garden, beds, plants, species, setToast, onRefresh }) {
+  const [adding, setAdding] = useState(false);
+  const [name, setName] = useState('');
+  const [bedId, setBedId] = useState(beds[0]?.id || '');
+  const [stage, setStage] = useState('unknown');
+
+  useEffect(() => { if (!bedId && beds[0]?.id) setBedId(beds[0].id); }, [beds, bedId]);
+
+  async function addPlant() {
+    if (!name.trim() || !bedId) return;
+    const matched = species.find((s) => name.includes(s.common_name));
+    const { error } = await supabase.from('plants').insert({
+      garden_id: garden.id,
+      bed_id: bedId,
+      species_id: matched?.id || null,
+      name,
+      stage,
+      status: 'active',
+      planted_at: new Date().toISOString().slice(0, 10),
+      source_type: 'unknown',
+    });
+    if (error) setToast(`还没添加成功：${error.message}`);
+    else { setToast('记下了。以后它的照片和记录都会放在这里。'); setAdding(false); setName(''); onRefresh(); }
+  }
+
   return (
     <section className="page">
-      <div className="section-title">
-        <h2>生长</h2>
-        <p>它们长到哪了。</p>
-      </div>
-      <div className="plant-list">
-        {plants.map((plant) => (
-          <div className="plant-card" key={plant.name}>
-            <div className="plant-icon"><Sprout size={22}/></div>
-            <div>
-              <div className="plant-head">
-                <h3>{plant.name}</h3>
-                <span>{plant.tag}</span>
-              </div>
-              <p className="phase">{plant.phase}</p>
-              <p>上次：{plant.last}</p>
-              <p>下次：{plant.next}</p>
-            </div>
-            <ChevronRight className="chevron" size={18}/>
+      <div className="section-title"><h2>生长</h2><p>{plants.length ? `${plants.length} 种植物正在被记住。` : '它们长到哪了。'}</p></div>
+      {plants.length ? <div className="plant-list">
+        {plants.map((plant) => <div className="plant-card" key={plant.id}>
+          <div className="plant-icon"><Sprout size={22}/></div>
+          <div>
+            <div className="plant-head"><h3>{plant.name}</h3><span>{plant.status === 'issue' ? '看一眼' : '安心'}</span></div>
+            <p className="phase">{STAGE_LABELS[plant.stage] || '不确定'}</p>
+            <p>区域：{plant.beds?.name || '未分区'}</p>
+            <p>下次：先拍一张现在的样子。</p>
           </div>
-        ))}
-      </div>
+          <ChevronRight className="chevron" size={18}/>
+        </div>)}
+      </div> : <EmptyState title="这块地还空着。" body="先添加一种植物，或者拍一张让园丁看看。" />}
+
+      {adding && <div className="quiet-card form-stack">
+        <label>植物名<input value={name} onChange={(e) => setName(e.target.value)} placeholder="比如：A 畦番茄" /></label>
+        <label>区域<select value={bedId} onChange={(e) => setBedId(e.target.value)}>{beds.map((bed) => <option key={bed.id} value={bed.id}>{bed.name}</option>)}</select></label>
+        <label>阶段<select value={stage} onChange={(e) => setStage(e.target.value)}>{Object.entries(STAGE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+        <button className="primary-button" onClick={addPlant}>添加</button>
+      </div>}
+      {!adding && <button className="secondary-button" onClick={() => setAdding(true)}><Plus size={16}/> 添加植物</button>}
     </section>
   );
 }
 
-function Seasons() {
+function Seasons({ plants, logs }) {
+  const highlights = [];
+  if (plants.length) highlights.push(`${plants.length} 种植物被记住了。`);
+  if (logs.length) highlights.push(`这周有 ${logs.length} 条新记录。`);
+  if (!highlights.length) highlights.push('第一张照片会成为这一年的开头。');
+
   return (
     <section className="page">
       <div className="letter-card">
         <p className="eyebrow">菜地来信</p>
-        <h2>这周，菜地往夏天走了一点。</h2>
-        <ul>
-          {seasonNotes.map((note) => <li key={note}>{note}</li>)}
-        </ul>
+        <h2>{logs.length ? '这周，菜地有了新的记录。' : '四季还没开始。'}</h2>
+        <ul>{highlights.map((note) => <li key={note}>{note}</li>)}</ul>
       </div>
       <div className="quiet-card">
         <p className="eyebrow">封季预览</p>
@@ -167,13 +487,22 @@ function Seasons() {
   );
 }
 
-function CaptureButton() {
-  return (
-    <button className="capture-button" onClick={() => alert('下一步会接入拍照、压缩、上传、豆包视觉识别。现在先确认产品感觉。')}>
-      <Camera size={20} />
-      拍一下
-    </button>
-  );
+function CaptureButton({ garden, onRefresh, setToast }) {
+  async function handleCapture() {
+    const { data: userData } = await supabase.auth.getUser();
+    const { error } = await supabase.from('logs').insert({
+      garden_id: garden.id,
+      created_by: userData.user.id,
+      log_type: 'photo_taken',
+      title: '拍了一张今天的样子',
+      auto_text: '今天的菜地，留下来了。',
+      happened_at: new Date().toISOString(),
+    });
+    if (error) setToast(`这张照片还没保存上：${error.message}`);
+    else { setToast('今天的菜地，留下来了。图片上传下一步接入。'); onRefresh(); }
+  }
+
+  return <button className="capture-button" onClick={handleCapture}><Camera size={20} />拍一下</button>;
 }
 
 function TabBar({ current, onChange }) {
@@ -183,16 +512,32 @@ function TabBar({ current, onChange }) {
     { id: 'growth', label: '生长', icon: Leaf },
     { id: 'seasons', label: '四季', icon: CalendarDays },
   ];
-  return (
-    <nav className="tabbar">
-      {tabs.map(({ id, label, icon: Icon }) => (
-        <button key={id} className={current === id ? 'active' : ''} onClick={() => onChange(id)}>
-          <Icon size={19} />
-          <span>{label}</span>
-        </button>
-      ))}
-    </nav>
-  );
+  return <nav className="tabbar">{tabs.map(({ id, label, icon: Icon }) => <button key={id} className={current === id ? 'active' : ''} onClick={() => onChange(id)}><Icon size={19} /><span>{label}</span></button>)}</nav>;
+}
+
+function EmptyState({ title, body }) {
+  return <div className="quiet-card"><h3>{title}</h3><p>{body}</p></div>;
+}
+
+function LoadingPage({ text }) {
+  return <section className="login-page"><div className="login-card loading-card"><Loader2 className="spin" size={24} /><p>{text}</p></div></section>;
+}
+
+function SetupMissing() {
+  return <section className="login-page"><div className="login-card"><h1>还差 Supabase 配置。</h1><p>请在 Netlify 添加 VITE_SUPABASE_URL 和 VITE_SUPABASE_ANON_KEY 后重新部署。</p></div></section>;
+}
+
+function Toast({ text, onClose }) {
+  useEffect(() => {
+    const timer = setTimeout(onClose, 3800);
+    return () => clearTimeout(timer);
+  }, [onClose]);
+  return <div className="toast">{text}</div>;
+}
+
+function formatDate(value) {
+  if (!value) return '';
+  return new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric' }).format(new Date(value));
 }
 
 createRoot(document.getElementById('root')).render(<App />);
