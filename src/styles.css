@@ -343,3 +343,25 @@ input:focus, select:focus { border-color: rgba(82, 97, 66, .48); box-shadow: 0 0
   .map-grid { grid-template-columns: 1fr; }
   .content { padding-left: 15px; padding-right: 15px; }
 }
+
+.gardener-card {
+  background: linear-gradient(145deg, rgba(241, 246, 231, .84), rgba(255, 252, 246, .82));
+}
+.gardener-title { display: flex; gap: 7px; align-items: center; color: #526142; }
+.bed-edit .form-stack, .bed-edit { gap: 10px; }
+.inline-actions { display: flex; gap: 8px; margin-top: 2px; }
+.tiny-button, .edit-link {
+  border: 1px solid rgba(41,40,34,.10);
+  border-radius: 999px;
+  background: rgba(255, 252, 246, .74);
+  color: #34362f;
+  min-height: 34px;
+  padding: 7px 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  font-size: 13px;
+}
+.tiny-button.dark { background: #252820; color: #f9f4ea; border-color: #252820; }
+.edit-link { margin-top: 12px; }

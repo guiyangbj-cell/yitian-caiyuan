@@ -16,6 +16,9 @@ import {
   CheckCircle2,
   Image as ImageIcon,
   X,
+  Pencil,
+  Save,
+  Bot,
 } from 'lucide-react';
 import { hasSupabaseConfig, supabase } from './lib/supabaseClient';
 import './styles.css';
@@ -84,6 +87,7 @@ function GardenApp({ session }) {
   const [plants, setPlants] = useState([]);
   const [logs, setLogs] = useState([]);
   const [photos, setPhotos] = useState([]);
+  const [recommendations, setRecommendations] = useState([]);
   const [species, setSpecies] = useState([]);
   const [toast, setToast] = useState('');
 
@@ -112,14 +116,15 @@ function GardenApp({ session }) {
     setGarden(activeGarden);
 
     if (activeGarden) {
-      const [bedsRes, plantsRes, logsRes, photosRes, speciesRes] = await Promise.all([
+      const [bedsRes, plantsRes, logsRes, photosRes, recosRes, speciesRes] = await Promise.all([
         supabase.from('beds').select('*').eq('garden_id', activeGarden.id).order('position_order', { ascending: true }),
         supabase.from('plants').select('*, beds(name)').eq('garden_id', activeGarden.id).order('created_at', { ascending: false }),
         supabase.from('logs').select('*').eq('garden_id', activeGarden.id).order('happened_at', { ascending: false }).limit(12),
         supabase.from('photos').select('*').eq('garden_id', activeGarden.id).order('taken_at', { ascending: false }).limit(12),
+        supabase.from('ai_recommendations').select('*').eq('garden_id', activeGarden.id).eq('source_type', 'photo').order('created_at', { ascending: false }).limit(5),
         supabase.from('plant_species').select('*').order('common_name', { ascending: true }),
       ]);
-      const firstError = bedsRes.error || plantsRes.error || logsRes.error || photosRes.error || speciesRes.error;
+      const firstError = bedsRes.error || plantsRes.error || logsRes.error || photosRes.error || recosRes.error || speciesRes.error;
       if (firstError) {
         setToast(`还没取到完整菜地数据：${firstError.message}`);
       }
@@ -127,6 +132,7 @@ function GardenApp({ session }) {
       setPlants(plantsRes.data || []);
       setLogs(logsRes.data || []);
       setPhotos(photosRes.data || []);
+      setRecommendations(recosRes.data || []);
       setSpecies(speciesRes.data || []);
     }
 
@@ -141,11 +147,11 @@ function GardenApp({ session }) {
   const content = useMemo(() => {
     if (loading) return <LoadingPage text="正在看今天" />;
     if (!garden) return <Onboarding session={session} onDone={refreshData} />;
-    if (tab === 'today') return <Today garden={garden} beds={beds} plants={plants} logs={logs} photos={photos} onRefresh={refreshData} setToast={setToast} />;
+    if (tab === 'today') return <Today garden={garden} beds={beds} plants={plants} logs={logs} photos={photos} recommendations={recommendations} onRefresh={refreshData} setToast={setToast} />;
     if (tab === 'map') return <GardenMap garden={garden} beds={beds} plants={plants} onRefresh={refreshData} setToast={setToast} />;
     if (tab === 'growth') return <Growth garden={garden} beds={beds} plants={plants} species={species} onRefresh={refreshData} setToast={setToast} />;
     return <Seasons garden={garden} plants={plants} logs={logs} photos={photos} />;
-  }, [loading, garden, tab, beds, plants, logs, photos, species]);
+  }, [loading, garden, tab, beds, plants, logs, photos, recommendations, species]);
 
   return (
     <AppShell>
@@ -487,7 +493,7 @@ function buildGardenBrief({ weather, logs, photos, plants }) {
   return { title, body, nextAction, weatherLine, reasons: reasons.slice(0, 3) };
 }
 
-function Today({ garden, beds, plants, logs, photos, setToast, onRefresh }) {
+function Today({ garden, beds, plants, logs, photos, recommendations, setToast, onRefresh }) {
   const weather = useGardenWeather(garden);
   const brief = weather.data
     ? buildGardenBrief({ weather: weather.data, logs, photos, plants })
@@ -530,6 +536,13 @@ function Today({ garden, beds, plants, logs, photos, setToast, onRefresh }) {
         </div>
       </div>}
 
+      {recommendations?.length > 0 && <div className="quiet-card gardener-card">
+        <div className="gardener-title"><Bot size={18} /><p className="eyebrow">园丁看过</p></div>
+        <h3>{recommendations[0].title}</h3>
+        {recommendations[0].body && <p>{recommendations[0].body}</p>}
+        {recommendations[0].reason && <p className="soft-note">依据：{recommendations[0].reason}</p>}
+      </div>}
+
       <div className="quick-actions">
         <button onClick={() => quickLog('watered', '浇水了')}>浇水了</button>
         <button onClick={() => quickLog('weeded', '除草了')}>除草了</button>
@@ -544,13 +557,44 @@ function Today({ garden, beds, plants, logs, photos, setToast, onRefresh }) {
   );
 }
 
-function GardenMap({ beds, plants, setToast, onRefresh }) {
+function GardenMap({ garden, beds, plants, setToast, onRefresh }) {
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState('');
+  const [editingId, setEditingId] = useState('');
+  const [draft, setDraft] = useState({ name: '', sunlight: '', water_access: '', bed_type: '' });
+
+  function startEdit(bed) {
+    setEditingId(bed.id);
+    setDraft({
+      name: bed.name || '',
+      sunlight: bed.sunlight || '',
+      water_access: bed.water_access || '',
+      bed_type: bed.bed_type || '',
+    });
+  }
+
+  async function saveBed(bedId) {
+    if (!draft.name.trim()) {
+      setToast('先给这个区域起个名字。');
+      return;
+    }
+    const { error } = await supabase.from('beds').update({
+      name: draft.name.trim(),
+      sunlight: draft.sunlight.trim() || '不确定',
+      water_access: draft.water_access.trim() || '不确定',
+      bed_type: draft.bed_type.trim() || '混合',
+    }).eq('id', bedId);
+    if (error) setToast(`还没保存成功：${error.message}`);
+    else {
+      setToast('地图已更新。');
+      setEditingId('');
+      onRefresh();
+    }
+  }
 
   async function addBed() {
     if (!name.trim()) return;
-    const gardenId = beds[0]?.garden_id || plants[0]?.garden_id;
+    const gardenId = garden?.id || beds[0]?.garden_id || plants[0]?.garden_id;
     if (!gardenId) return;
     const { error } = await supabase.from('beds').insert({ garden_id: gardenId, name, sunlight: '不确定', water_access: '不确定', bed_type: '混合', position_order: beds.length + 1 });
     if (error) setToast(`还没添加成功：${error.message}`);
@@ -559,15 +603,28 @@ function GardenMap({ beds, plants, setToast, onRefresh }) {
 
   return (
     <section className="page">
-      <div className="section-title"><h2>地图</h2><p>看这块地怎么安排。</p></div>
+      <div className="section-title"><h2>地图</h2><p>区域可以改名，也可以慢慢调整。</p></div>
       <div className="map-grid">
         {beds.map((bed) => {
           const bedPlants = plants.filter((p) => p.bed_id === bed.id).map((p) => p.name).join('、') || '还没有植物';
+          const isEditing = editingId === bed.id;
           return <div className="bed-card" key={bed.id}>
-            <div className="bed-top"><h3>{bed.name}</h3><span>{bed.sunlight}</span></div>
-            <p className="bed-detail">种着：{bedPlants}</p>
-            <p>水源：{bed.water_access}</p>
-            <p className="soft-note">{bed.bed_type === '给一天观察' ? '适合放一盆薄荷，或者种几株向日葵。' : '先这样记着，之后再慢慢调整。'}</p>
+            {isEditing ? <div className="bed-edit form-stack">
+              <label>区域名<input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="比如：A 畦" /></label>
+              <label>日照<input value={draft.sunlight} onChange={(e) => setDraft({ ...draft, sunlight: e.target.value })} placeholder="比如：全天晒" /></label>
+              <label>水源<input value={draft.water_access} onChange={(e) => setDraft({ ...draft, water_access: e.target.value })} placeholder="比如：近 / 中 / 远" /></label>
+              <label>用途<input value={draft.bed_type} onChange={(e) => setDraft({ ...draft, bed_type: e.target.value })} placeholder="比如：种菜 / 种花 / 一天观察" /></label>
+              <div className="inline-actions">
+                <button className="tiny-button dark" onClick={() => saveBed(bed.id)}><Save size={14}/> 保存</button>
+                <button className="tiny-button" onClick={() => setEditingId('')}>取消</button>
+              </div>
+            </div> : <>
+              <div className="bed-top"><h3>{bed.name}</h3><span>{bed.sunlight}</span></div>
+              <p className="bed-detail">种着：{bedPlants}</p>
+              <p>水源：{bed.water_access}</p>
+              <p className="soft-note">{bed.bed_type || '先这样记着，之后再慢慢调整。'}</p>
+              <button className="edit-link" onClick={() => startEdit(bed)}><Pencil size={13}/> 编辑</button>
+            </>}
           </div>;
         })}
       </div>
@@ -680,6 +737,7 @@ function CaptureButton({ garden, beds, plants, onRefresh, setToast }) {
   const [targetType, setTargetType] = useState('garden');
   const [targetId, setTargetId] = useState('');
   const [busy, setBusy] = useState(false);
+  const [aiBusy, setAiBusy] = useState(false);
 
   function reset() {
     setFile(null);
@@ -687,6 +745,7 @@ function CaptureButton({ garden, beds, plants, onRefresh, setToast }) {
     setTargetType('garden');
     setTargetId('');
     setBusy(false);
+    setAiBusy(false);
   }
 
   function close() {
@@ -771,7 +830,60 @@ function CaptureButton({ garden, beds, plants, onRefresh, setToast }) {
         });
       }
 
-      setToast(caption);
+      let analysisSaved = false;
+      try {
+        setAiBusy(true);
+        const targetLabel = targetType === 'plant'
+          ? plants.find((p) => p.id === targetId)?.name || '植物'
+          : targetType === 'bed'
+            ? beds.find((b) => b.id === targetId)?.name || '区域'
+            : targetType === 'child'
+              ? '一天的小发现'
+              : '整个菜园';
+        const imageDataUrl = await blobToDataUrl(compressed);
+        const response = await fetch('/.netlify/functions/analyze-photo', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image_base64: imageDataUrl, target_label: targetLabel, target_type: targetType }),
+        });
+        if (!response.ok) throw new Error('照片理解暂时不可用');
+        const analysis = await response.json();
+        if (analysis?.title) {
+          await supabase.from('ai_recommendations').insert({
+            garden_id: garden.id,
+            bed_id: bedId,
+            plant_id: plantId,
+            photo_id: photoData.id,
+            recommendation_type: 'photo_observation',
+            title: analysis.title,
+            body: analysis.body || '',
+            reason: analysis.reason || '',
+            source_type: 'photo',
+            model_route: 'doubao',
+            confidence_label: analysis.confidence_label || 'uncertain',
+            dedupe_key: `photo:${photoData.id}`,
+          });
+          await supabase.from('logs').insert({
+            garden_id: garden.id,
+            bed_id: bedId,
+            plant_id: plantId,
+            photo_id: photoData.id,
+            created_by: user.id,
+            log_type: 'note',
+            title: '园丁看了一眼',
+            auto_text: `${analysis.title}${analysis.body ? `。${analysis.body}` : ''}`,
+            happened_at: new Date().toISOString(),
+            metadata: { source: 'photo_ai', status_tag: analysis.status_tag || 'unclear' },
+          });
+          analysisSaved = true;
+        }
+      } catch (aiError) {
+        console.warn('photo analysis skipped', aiError);
+      } finally {
+        setAiBusy(false);
+      }
+
+      setToast(analysisSaved ? '已保存，园丁也看了一眼。' : caption);
       close();
       onRefresh();
     } catch (error) {
@@ -804,12 +916,22 @@ function CaptureButton({ garden, beds, plants, onRefresh, setToast }) {
               <option value="child:">一天的小发现</option>
             </select>
           </label>
-          <button className="primary-button" onClick={uploadPhoto} disabled={busy}>{busy ? <Loader2 className="spin" size={18} /> : <ImageIcon size={18} />} 保存</button>
+          <button className="primary-button" onClick={uploadPhoto} disabled={busy}>{busy ? <Loader2 className="spin" size={18} /> : <ImageIcon size={18} />} {aiBusy ? '保存中，园丁在看' : '保存'}</button>
           <button className="secondary-button" onClick={close} disabled={busy}>取消</button>
         </div>
       </div>
     </div>}
   </>;
+}
+
+
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error('图片读取失败。'));
+    reader.readAsDataURL(blob);
+  });
 }
 
 function compressImage(file, maxSide = 1600, quality = 0.82) {
