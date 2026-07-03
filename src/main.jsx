@@ -410,23 +410,18 @@ function useGardenWeather(garden) {
   useEffect(() => {
     if (!garden?.id) return;
     let cancelled = false;
-    const url = new URL('https://api.open-meteo.com/v1/forecast');
-    url.searchParams.set('latitude', String(HUAIROU_WEATHER.latitude));
-    url.searchParams.set('longitude', String(HUAIROU_WEATHER.longitude));
-    url.searchParams.set('timezone', HUAIROU_WEATHER.timezone);
-    url.searchParams.set('past_days', '2');
-    url.searchParams.set('forecast_days', '3');
-    url.searchParams.set('current', 'temperature_2m,relative_humidity_2m,precipitation,weather_code');
-    url.searchParams.set('hourly', 'precipitation,temperature_2m');
-    url.searchParams.set('daily', 'weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum');
-
     setState({ loading: true, error: '', data: null });
     const controller = new AbortController();
-    const timer = window.setTimeout(() => controller.abort(), 8000);
-    fetch(url.toString(), { signal: controller.signal })
-      .then((response) => {
-        if (!response.ok) throw new Error(`天气接口返回 ${response.status}`);
-        return response.json();
+    const timer = window.setTimeout(() => controller.abort(), 14000);
+    fetch('/.netlify/functions/weather-garden', { signal: controller.signal })
+      .then(async (response) => {
+        const text = await response.text();
+        if (!response.ok) {
+          let detail = text;
+          try { detail = JSON.parse(text).detail || JSON.parse(text).error || text; } catch (_) {}
+          throw new Error(`天气接口返回 ${response.status}${detail ? `：${String(detail).slice(0, 80)}` : ''}`);
+        }
+        return JSON.parse(text);
       })
       .then((data) => {
         if (!cancelled) setState({ loading: false, error: '', data });
@@ -458,6 +453,37 @@ function sumPrecipitationForDay(weather, key) {
   const dailyIndex = weather?.daily?.time?.indexOf(key) ?? -1;
   if (dailyIndex >= 0) return Number(weather.daily.precipitation_sum?.[dailyIndex] || 0);
   return 0;
+}
+
+function valueForDay(weather, collection, field, key) {
+  const index = weather?.[collection]?.time?.indexOf(key) ?? -1;
+  if (index < 0) return null;
+  const value = weather?.[collection]?.[field]?.[index];
+  return value === undefined || value === null ? null : Number(value);
+}
+
+function nearestHourlyIndex(weather, date = new Date()) {
+  const times = weather?.hourly?.time || [];
+  if (!times.length) return -1;
+  const target = date.getTime();
+  let best = 0;
+  let bestDelta = Infinity;
+  times.forEach((time, index) => {
+    const delta = Math.abs(new Date(time).getTime() - target);
+    if (delta < bestDelta) { bestDelta = delta; best = index; }
+  });
+  return best;
+}
+
+function hourlyValue(weather, field, index) {
+  if (index < 0) return null;
+  const value = weather?.hourly?.[field]?.[index];
+  return value === undefined || value === null ? null : Number(value);
+}
+
+function roundValue(value, digits = 0) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return '—';
+  return Number(value).toFixed(digits).replace(/\.0+$/, '');
 }
 
 function buildGardenBrief({ weather, logs, photos, plants }) {
@@ -526,11 +552,36 @@ function buildGardenBrief({ weather, logs, photos, plants }) {
   if (daysSincePhoto === null) reasons.push('还没有照片记录。');
   else if (daysSincePhoto >= 7) reasons.push(`最近记录一张照片是 ${daysSincePhoto} 天前。`);
 
+  const hourIndex = nearestHourlyIndex(weather);
+  const humidity = weather?.current?.relative_humidity_2m ?? hourlyValue(weather, 'relative_humidity_2m', hourIndex);
+  const apparent = weather?.current?.apparent_temperature;
+  const wind = weather?.current?.wind_speed_10m ?? hourlyValue(weather, 'wind_speed_10m', hourIndex);
+  const gust = weather?.current?.wind_gusts_10m ?? hourlyValue(weather, 'wind_gusts_10m', hourIndex);
+  const rainProbability = valueForDay(weather, 'daily', 'precipitation_probability_max', todayKey);
+  const uv = valueForDay(weather, 'daily', 'uv_index_max', todayKey);
+  const et0 = valueForDay(weather, 'daily', 'et0_fao_evapotranspiration', todayKey);
+  const soilTemp = hourlyValue(weather, 'soil_temperature_6cm', hourIndex) ?? hourlyValue(weather, 'soil_temperature_0cm', hourIndex);
+  const soilMoisture = hourlyValue(weather, 'soil_moisture_1_to_3cm', hourIndex) ?? hourlyValue(weather, 'soil_moisture_0_to_1cm', hourIndex);
+
   const weatherLine = currentTemp !== undefined
     ? `怀柔现在约 ${Math.round(Number(currentTemp))}℃，${weatherLabel}。`
     : `怀柔今日${weatherLabel}。`;
 
-  return { title, body, nextAction, weatherLine, reasons: reasons.slice(0, 3) };
+  const weatherDetails = [
+    { label: '体感', value: `${roundValue(apparent ?? currentTemp)}℃` },
+    { label: '湿度', value: `${roundValue(humidity)}%` },
+    { label: '今日降水', value: `${roundValue(todayRain, 1)}mm` },
+    { label: '降水概率', value: `${roundValue(rainProbability)}%` },
+    { label: '最高温', value: `${roundValue(todayMax)}℃` },
+    { label: '风', value: `${roundValue(wind)}km/h` },
+    { label: '阵风', value: `${roundValue(gust)}km/h` },
+    { label: '紫外线', value: `${roundValue(uv, 1)}` },
+    { label: '蒸散', value: `${roundValue(et0, 1)}mm` },
+    { label: '土温', value: `${roundValue(soilTemp)}℃` },
+    { label: '浅层土湿', value: soilMoisture === null ? '—' : roundValue(soilMoisture, 2) },
+  ];
+
+  return { title, body, nextAction, weatherLine, weatherDetails, reasons: reasons.slice(0, 3) };
 }
 
 function Today({ garden, beds, plants, logs, photos, recommendations, setToast, onRefresh }) {
@@ -560,7 +611,10 @@ function Today({ garden, beds, plants, logs, photos, recommendations, setToast, 
         <p className="eyebrow">今天</p>
         <h2>{brief?.title || '正在看今天'}</h2>
         <p className="lead">{brief?.body || '正在整理天气和最近记录。'}</p>
-        <div className="reason-row"><CloudSun size={17} /><span>{weather.loading ? '正在获取怀柔天气。' : weather.error ? '天气暂时取不到，先看最近记录。' : brief.weatherLine}</span></div>
+        <div className="reason-row"><CloudSun size={17} /><span>{weather.loading ? '正在获取怀柔天气。' : weather.error ? `天气暂时取不到：${weather.error}` : brief.weatherLine}</span></div>
+        {brief?.weatherDetails?.length > 0 && <div className="weather-grid">
+          {brief.weatherDetails.map((item) => <div key={item.label} className="weather-cell"><span>{item.label}</span><strong>{item.value}</strong></div>)}
+        </div>}
       </div>
 
       <div className="quiet-card">
@@ -576,11 +630,15 @@ function Today({ garden, beds, plants, logs, photos, recommendations, setToast, 
         </div>
       </div>}
 
-      {recommendations?.length > 0 && <div className="quiet-card gardener-card">
+      {recommendations?.length > 0 ? <div className="quiet-card gardener-card">
         <div className="gardener-title"><Bot size={18} /><p className="eyebrow">园丁看过</p></div>
         <h3>{recommendations[0].title}</h3>
         {recommendations[0].body && <p>{recommendations[0].body}</p>}
         {recommendations[0].reason && <p className="soft-note">依据：{recommendations[0].reason}</p>}
+      </div> : photos.length > 0 && <div className="quiet-card gardener-card">
+        <div className="gardener-title"><Bot size={18} /><p className="eyebrow">园丁</p></div>
+        <h3>还没有完成照片观察</h3>
+        <p>照片已经保存。如果一直没有结果，去 Netlify 的 Functions 日志里看 analyze-photo 的错误。</p>
       </div>}
 
       <div className="quick-actions">
@@ -886,7 +944,11 @@ function CaptureButton({ garden, beds, plants, onRefresh, setToast }) {
           signal: controller.signal,
           body: JSON.stringify({ image_base64: imageDataUrl, target_label: targetLabel, target_type: targetType }),
         }).finally(() => window.clearTimeout(timer));
-        if (!response.ok) throw new Error('照片理解暂时不可用');
+        if (!response.ok) {
+          let detail = '';
+          try { detail = (await response.clone().json()).detail || (await response.clone().json()).error || ''; } catch (_) {}
+          throw new Error(detail ? `照片理解暂时不可用：${String(detail).slice(0, 80)}` : '照片理解暂时不可用');
+        }
         const analysis = await response.json();
         if (analysis?.title) {
           await supabase.from('ai_recommendations').insert({
