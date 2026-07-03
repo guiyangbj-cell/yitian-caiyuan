@@ -65,8 +65,11 @@ export async function handler(event) {
 
     const prompt = `你是一位克制、谨慎的家庭菜园观察助手。请看这张照片，只做低风险观察，不要诊断病害，不要建议用药，不要夸大。对象：${targetLabel}，类型：${targetType}。输出必须是 JSON：{"title":"不超过14个汉字","body":"一句自然中文，说明看到了什么和温和建议","reason":"一句话说明依据","status_tag":"normal|watch|dry|unclear","confidence_label":"high|medium|low|uncertain","season_material":true}`;
 
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 17000);
     const response = await fetch(`${baseUrl.replace(/\/$/, '')}/chat/completions`, {
       method: 'POST',
+      signal: controller.signal,
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`,
@@ -74,6 +77,7 @@ export async function handler(event) {
       body: JSON.stringify({
         model,
         temperature: 0.2,
+        max_tokens: 300,
         messages: [
           { role: 'system', content: '你只输出 JSON，不输出 Markdown。你是家庭菜园观察助手，语言自然、谨慎、适合中国家庭使用。' },
           {
@@ -85,7 +89,7 @@ export async function handler(event) {
           },
         ],
       }),
-    });
+    }).finally(() => clearTimeout(timer));
 
     const text = await response.text();
     if (!response.ok) {
@@ -96,6 +100,7 @@ export async function handler(event) {
     const content = data?.choices?.[0]?.message?.content || '';
     return { statusCode: 200, headers: JSON_HEADERS, body: JSON.stringify(normalizeResult(safeJson(content))) };
   } catch (error) {
-    return { statusCode: 500, headers: JSON_HEADERS, body: JSON.stringify({ error: error.message || 'Analyze failed' }) };
+    const message = error?.name === 'AbortError' ? 'Analyze timed out' : (error.message || 'Analyze failed');
+    return { statusCode: 500, headers: JSON_HEADERS, body: JSON.stringify({ error: message }) };
   }
 }

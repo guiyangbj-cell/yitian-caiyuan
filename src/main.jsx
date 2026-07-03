@@ -41,6 +41,42 @@ const STAGE_LABELS = {
   unknown: '不确定',
 };
 
+const BED_OPTIONS = {
+  sunlight: ['全天晒', '半日晒', '偏阴', '不确定'],
+  water_access: ['近', '中', '远', '不确定'],
+  bed_type: ['种菜', '种花', '香草', '给一天观察', '混合'],
+};
+
+function normalizeOption(value, allowed, fallback) {
+  const text = String(value || '').trim();
+  const alias = {
+    '全日晒': '全天晒',
+    '半天晒': '半日晒',
+    '半天日照': '半日晒',
+    '半日照': '半日晒',
+    '阴': '偏阴',
+    '比较阴': '偏阴',
+    '近水': '近',
+    '中等': '中',
+    '较远': '远',
+    '远一点': '远',
+    '观察': '给一天观察',
+    '儿童观察': '给一天观察',
+    '一天观察': '给一天观察',
+  };
+  const next = alias[text] || text || fallback;
+  return allowed.includes(next) ? next : fallback;
+}
+
+function normalizeBedDraft(draft) {
+  return {
+    name: String(draft.name || '').trim(),
+    sunlight: normalizeOption(draft.sunlight, BED_OPTIONS.sunlight, '不确定'),
+    water_access: normalizeOption(draft.water_access, BED_OPTIONS.water_access, '不确定'),
+    bed_type: normalizeOption(draft.bed_type, BED_OPTIONS.bed_type, '混合'),
+  };
+}
+
 function App() {
   const [session, setSession] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -385,7 +421,9 @@ function useGardenWeather(garden) {
     url.searchParams.set('daily', 'weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum');
 
     setState({ loading: true, error: '', data: null });
-    fetch(url.toString())
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), 8000);
+    fetch(url.toString(), { signal: controller.signal })
       .then((response) => {
         if (!response.ok) throw new Error(`天气接口返回 ${response.status}`);
         return response.json();
@@ -394,10 +432,12 @@ function useGardenWeather(garden) {
         if (!cancelled) setState({ loading: false, error: '', data });
       })
       .catch((error) => {
-        if (!cancelled) setState({ loading: false, error: error.message || '天气暂时取不到', data: null });
-      });
+        const message = error?.name === 'AbortError' ? '天气接口响应太慢' : (error.message || '天气暂时取不到');
+        if (!cancelled) setState({ loading: false, error: message, data: null });
+      })
+      .finally(() => window.clearTimeout(timer));
 
-    return () => { cancelled = true; };
+    return () => { cancelled = true; controller.abort(); window.clearTimeout(timer); };
   }, [garden?.id]);
 
   return state;
@@ -519,8 +559,8 @@ function Today({ garden, beds, plants, logs, photos, recommendations, setToast, 
       <div className="hero-card">
         <p className="eyebrow">今天</p>
         <h2>{brief?.title || '正在看今天'}</h2>
-        <p className="lead">{brief?.body || '正在整理天气和最近记录记录。'}</p>
-        <div className="reason-row"><CloudSun size={17} /><span>{weather.loading ? '正在获取怀柔天气。' : weather.error ? '天气暂时取不到，先看最近记录记录。' : brief.weatherLine}</span></div>
+        <p className="lead">{brief?.body || '正在整理天气和最近记录。'}</p>
+        <div className="reason-row"><CloudSun size={17} /><span>{weather.loading ? '正在获取怀柔天气。' : weather.error ? '天气暂时取不到，先看最近记录。' : brief.weatherLine}</span></div>
       </div>
 
       <div className="quiet-card">
@@ -574,16 +614,12 @@ function GardenMap({ garden, beds, plants, setToast, onRefresh }) {
   }
 
   async function saveBed(bedId) {
-    if (!draft.name.trim()) {
+    const nextBed = normalizeBedDraft(draft);
+    if (!nextBed.name) {
       setToast('先给这个区域起个名字。');
       return;
     }
-    const { error } = await supabase.from('beds').update({
-      name: draft.name.trim(),
-      sunlight: draft.sunlight.trim() || '不确定',
-      water_access: draft.water_access.trim() || '不确定',
-      bed_type: draft.bed_type.trim() || '混合',
-    }).eq('id', bedId);
+    const { error } = await supabase.from('beds').update(nextBed).eq('id', bedId);
     if (error) setToast(`还没保存成功：${error.message}`);
     else {
       setToast('地图已更新。');
@@ -611,9 +647,9 @@ function GardenMap({ garden, beds, plants, setToast, onRefresh }) {
           return <div className="bed-card" key={bed.id}>
             {isEditing ? <div className="bed-edit form-stack">
               <label>区域名<input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="比如：A 畦" /></label>
-              <label>日照<input value={draft.sunlight} onChange={(e) => setDraft({ ...draft, sunlight: e.target.value })} placeholder="比如：全天晒" /></label>
-              <label>水源<input value={draft.water_access} onChange={(e) => setDraft({ ...draft, water_access: e.target.value })} placeholder="比如：近 / 中 / 远" /></label>
-              <label>用途<input value={draft.bed_type} onChange={(e) => setDraft({ ...draft, bed_type: e.target.value })} placeholder="比如：种菜 / 种花 / 一天观察" /></label>
+              <label>日照<select value={normalizeOption(draft.sunlight, BED_OPTIONS.sunlight, '不确定')} onChange={(e) => setDraft({ ...draft, sunlight: e.target.value })}>{BED_OPTIONS.sunlight.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+              <label>水源<select value={normalizeOption(draft.water_access, BED_OPTIONS.water_access, '不确定')} onChange={(e) => setDraft({ ...draft, water_access: e.target.value })}>{BED_OPTIONS.water_access.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+              <label>用途<select value={normalizeOption(draft.bed_type, BED_OPTIONS.bed_type, '混合')} onChange={(e) => setDraft({ ...draft, bed_type: e.target.value })}>{BED_OPTIONS.bed_type.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
               <div className="inline-actions">
                 <button className="tiny-button dark" onClick={() => saveBed(bed.id)}><Save size={14}/> 保存</button>
                 <button className="tiny-button" onClick={() => setEditingId('')}>取消</button>
@@ -831,6 +867,7 @@ function CaptureButton({ garden, beds, plants, onRefresh, setToast }) {
       }
 
       let analysisSaved = false;
+      let analysisErrorMsg = '';
       try {
         setAiBusy(true);
         const targetLabel = targetType === 'plant'
@@ -841,11 +878,14 @@ function CaptureButton({ garden, beds, plants, onRefresh, setToast }) {
               ? '一天的小发现'
               : '整个菜园';
         const imageDataUrl = await blobToDataUrl(compressed);
+        const controller = new AbortController();
+        const timer = window.setTimeout(() => controller.abort(), 18000);
         const response = await fetch('/.netlify/functions/analyze-photo', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
           body: JSON.stringify({ image_base64: imageDataUrl, target_label: targetLabel, target_type: targetType }),
-        });
+        }).finally(() => window.clearTimeout(timer));
         if (!response.ok) throw new Error('照片理解暂时不可用');
         const analysis = await response.json();
         if (analysis?.title) {
@@ -878,12 +918,13 @@ function CaptureButton({ garden, beds, plants, onRefresh, setToast }) {
           analysisSaved = true;
         }
       } catch (aiError) {
+        analysisErrorMsg = aiError?.name === 'AbortError' ? '园丁这次看得有点慢，照片已先保存。' : '照片已保存，园丁这次还没看完。';
         console.warn('photo analysis skipped', aiError);
       } finally {
         setAiBusy(false);
       }
 
-      setToast(analysisSaved ? '已保存，园丁也看了一眼。' : caption);
+      setToast(analysisSaved ? '已保存，园丁也看了一眼。回到「今天」能看到结果。' : (analysisErrorMsg || caption));
       close();
       onRefresh();
     } catch (error) {
