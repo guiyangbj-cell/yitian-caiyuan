@@ -1,20 +1,37 @@
-# 一天菜园 v0.4.1 Password Login
+# 一天菜园 v0.4.2 家庭登录版
 
-本版本将登录方式从 Magic Link 改为邮箱 + 密码。
+这版把登录收敛为家庭私有 App 的稳定方案：
 
-## 变化
+- 前台只保留邮箱 + 密码登录。
+- 不开放注册。
+- 不提供忘记密码 / 设置密码。
+- 账号需要在 Supabase Dashboard 后台手动创建。
+- 保留 v0.3.1 的开园、地图、生长、四季、日志、图片上传功能。
 
-- 登录页支持“登录 / 创建账号”切换
-- 登录调用 Supabase `signInWithPassword`
-- 创建账号调用 Supabase `signUp`
-- 保留 v0.3.1 图片上传与数据链路
-- 不再依赖 Magic Link 跨设备跳转
+## 为什么这样做
 
-## Supabase 设置建议
+一天菜园是家庭私有 App，不是大众产品。v0.1 阶段不需要开放注册，也不需要触发 Supabase 默认邮件服务，避免 Magic Link、OTP、重置密码、注册邮件等 rate limit 问题。
 
-Authentication → Sign In / Providers → Email：
+## 使用前请在 Supabase 手动创建账号
 
-- Enable email provider：开启
-- Minimum password length：6 或更高
+1. Supabase → Authentication → Users
+2. 删除之前测试过的用户，避免旧 Magic Link / 半注册状态干扰
+3. Add user / Create user
+4. 输入邮箱和密码
+5. 勾选 Auto confirm user / Confirm email（如果有）
+6. 保存
 
-如果创建账号后提示需要确认邮箱，请先点邮箱确认链接，再回到 App 用邮箱密码登录。
+然后在 App 里用这个邮箱和密码登录。
+
+## 部署
+
+覆盖 GitHub 根目录文件：
+
+- package.json
+- package-lock.json
+- index.html
+- README.md
+- public
+- src
+
+等待 Netlify Published。

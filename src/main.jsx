@@ -41,7 +41,6 @@ const STAGE_LABELS = {
 function App() {
   const [session, setSession] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [recoveryMode, setRecoveryMode] = useState(false);
 
   useEffect(() => {
     if (!hasSupabaseConfig) {
@@ -55,7 +54,6 @@ function App() {
     });
 
     const { data: listener } = supabase.auth.onAuthStateChange((event, nextSession) => {
-      if (event === 'PASSWORD_RECOVERY') setRecoveryMode(true);
       setSession(nextSession);
     });
 
@@ -74,9 +72,6 @@ function App() {
     return <AppShell><LoginPage /></AppShell>;
   }
 
-  if (recoveryMode) {
-    return <AppShell><ResetPasswordPage onDone={() => setRecoveryMode(false)} /></AppShell>;
-  }
 
   return <GardenApp session={session} />;
 }
@@ -183,116 +178,45 @@ function Header({ garden, userEmail }) {
 
 function friendlyAuthError(message) {
   const text = String(message || '');
-  if (text.includes('Invalid login credentials')) return '账号或密码不正确。如果你以前用邮箱链接登录过，请先点「设置密码」。';
-  if (text.includes('Email not confirmed')) return '这个邮箱还没有确认。先去邮箱点一次确认链接，再回来登录。';
-  if (text.includes('User already registered')) return '这个邮箱已经注册过了，直接登录；如果没有密码，点「设置密码」。';
-  if (text.includes('Password should be at least')) return '密码至少 6 位。';
+  if (text.includes('Invalid login credentials')) return '邮箱或密码不正确。';
+  if (text.includes('Email not confirmed')) return '这个账号还没有确认。请到 Supabase 后台把用户设为 Confirmed。';
   if (text.includes('rate limit')) return '操作太频繁了，先等一会儿再试。';
-  if (text.includes('Signup is disabled')) return '当前项目暂时没有开启注册。去 Supabase 的 Auth 设置里打开用户注册。';
-  return text || '这次没有成功，可以再试一次。';
+  if (text.includes('Network')) return '暂时登录不上，请稍后再试。';
+  return '暂时登录不上，请稍后再试。';
 }
 
 function LoginPage() {
-  const [mode, setMode] = useState('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [password2, setPassword2] = useState('');
-  const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-
-  function switchMode(nextMode) {
-    setMode(nextMode);
-    setError('');
-    setMessage('');
-    setPassword('');
-    setPassword2('');
-  }
 
   async function handleSubmit(event) {
     event.preventDefault();
     setError('');
-    setMessage('');
 
-    if (!email.trim()) {
-      setError('先输入邮箱。');
-      return;
-    }
-
-    if (password.length < 6) {
-      setError('密码至少 6 位。');
-      return;
-    }
-
-    if (mode === 'signup' && password !== password2) {
-      setError('两次输入的密码不一样。');
+    if (!email.trim() || !password) {
+      setError('请输入邮箱和密码。');
       return;
     }
 
     setBusy(true);
-
-    if (mode === 'signin') {
-      const { error: signInError } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
-        password,
-      });
-      setBusy(false);
-      if (signInError) {
-        setError(friendlyAuthError(signInError.message));
-        return;
-      }
-      return;
-    }
-
-    const { data, error: signUpError } = await supabase.auth.signUp({
+    const { error: signInError } = await supabase.auth.signInWithPassword({
       email: email.trim(),
       password,
-      options: {
-        emailRedirectTo: window.location.origin,
-      },
-    });
-
-    setBusy(false);
-    if (signUpError) {
-      setError(friendlyAuthError(signUpError.message));
-      return;
-    }
-
-    if (data?.session) {
-      setMessage('注册成功，正在进入一天菜园。');
-    } else {
-      setMessage('注册成功。如果邮箱里有确认邮件，点一下确认链接；确认后回来登录。');
-      setMode('signin');
-      setPassword('');
-      setPassword2('');
-    }
-  }
-
-  async function sendPasswordReset() {
-    setError('');
-    setMessage('');
-    if (!email.trim()) {
-      setError('先输入邮箱，再点设置密码。');
-      return;
-    }
-    setBusy(true);
-    const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-      redirectTo: window.location.origin,
     });
     setBusy(false);
-    if (resetError) {
-      setError(friendlyAuthError(resetError.message));
-      return;
+
+    if (signInError) {
+      setError(friendlyAuthError(signInError.message));
     }
-    setMessage('已经发送设置密码邮件。去邮箱点链接，回来设置一个新密码。');
   }
 
   return (
     <section className="login-page">
-      <div className="login-card clean-login">
-        <p className="eyebrow">一天菜园</p>
-        <h1>{mode === 'signin' ? '登录' : '注册账号'}</h1>
-        <p className="login-subtitle">家庭内测版，先用邮箱和密码进入。照片、记录和四季都会留在这里。</p>
+      <div className="login-card clean-login family-login-card">
+        <h1>一天菜园</h1>
+        <p className="login-subtitle">请输入家庭账号。</p>
 
         <form onSubmit={handleSubmit} className="form-stack">
           <label>
@@ -301,77 +225,15 @@ function LoginPage() {
           </label>
           <label>
             密码
-            <input value={password} onChange={(e) => setPassword(e.target.value)} placeholder="请输入密码" type="password" autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} required />
+            <input value={password} onChange={(e) => setPassword(e.target.value)} placeholder="请输入密码" type="password" autoComplete="current-password" required />
           </label>
-          {mode === 'signup' && (
-            <label>
-              确认密码
-              <input value={password2} onChange={(e) => setPassword2(e.target.value)} placeholder="请再输入一次密码" type="password" autoComplete="new-password" required />
-            </label>
-          )}
           {error && <p className="error-text">{error}</p>}
-          {message && <p className="success-text">{message}</p>}
           <button className="primary-button" disabled={busy} type="submit">
-            {busy ? <Loader2 className="spin" size={18} /> : <Mail size={18} />} {mode === 'signin' ? '登录' : '注册'}
+            {busy ? <Loader2 className="spin" size={18} /> : <Mail size={18} />} 登录
           </button>
         </form>
 
-        <div className="login-actions">
-          {mode === 'signin' ? (
-            <>
-              <button type="button" className="text-button" onClick={() => switchMode('signup')}>没有账号？注册</button>
-              <button type="button" className="text-button muted" onClick={sendPasswordReset} disabled={busy}>忘记密码 / 设置密码</button>
-            </>
-          ) : (
-            <button type="button" className="text-button" onClick={() => switchMode('signin')}>已有账号？登录</button>
-          )}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function ResetPasswordPage({ onDone }) {
-  const [password, setPassword] = useState('');
-  const [password2, setPassword2] = useState('');
-  const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
-
-  async function savePassword(event) {
-    event.preventDefault();
-    setError('');
-    if (password.length < 6) {
-      setError('密码至少 6 位。');
-      return;
-    }
-    if (password !== password2) {
-      setError('两次输入的密码不一样。');
-      return;
-    }
-    setBusy(true);
-    const { error: updateError } = await supabase.auth.updateUser({ password });
-    setBusy(false);
-    if (updateError) {
-      setError(friendlyAuthError(updateError.message));
-      return;
-    }
-    onDone();
-  }
-
-  return (
-    <section className="login-page">
-      <div className="login-card clean-login">
-        <p className="eyebrow">一天菜园</p>
-        <h1>设置新密码</h1>
-        <p className="login-subtitle">以后你可以在手机和电脑上直接用邮箱和密码登录。</p>
-        <form onSubmit={savePassword} className="form-stack">
-          <label>新密码<input value={password} onChange={(e) => setPassword(e.target.value)} placeholder="至少 6 位" type="password" autoComplete="new-password" required /></label>
-          <label>确认密码<input value={password2} onChange={(e) => setPassword2(e.target.value)} placeholder="再输入一次" type="password" autoComplete="new-password" required /></label>
-          {error && <p className="error-text">{error}</p>}
-          <button className="primary-button" disabled={busy} type="submit">
-            {busy ? <Loader2 className="spin" size={18} /> : <CheckCircle2 size={18} />} 保存密码
-          </button>
-        </form>
+        <p className="login-note">账号由家庭管理员创建。</p>
       </div>
     </section>
   );
