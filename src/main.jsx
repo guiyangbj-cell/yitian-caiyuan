@@ -345,15 +345,153 @@ function Onboarding({ session, onDone }) {
   );
 }
 
-function Today({ garden, beds, plants, logs, photos, setToast, onRefresh }) {
-  const hasPlants = plants.length > 0;
+
+const HUAIROU_WEATHER = {
+  latitude: 40.32,
+  longitude: 116.63,
+  timezone: 'Asia/Shanghai',
+};
+
+const WEATHER_CODES = {
+  0: '晴', 1: '大致晴朗', 2: '有云', 3: '阴',
+  45: '有雾', 48: '雾凇',
+  51: '小毛毛雨', 53: '毛毛雨', 55: '较强毛毛雨',
+  61: '小雨', 63: '中雨', 65: '大雨',
+  71: '小雪', 73: '中雪', 75: '大雪',
+  80: '阵雨', 81: '较强阵雨', 82: '强阵雨',
+  95: '雷雨', 96: '雷雨伴冰雹', 99: '强雷雨伴冰雹',
+};
+
+function useGardenWeather(garden) {
+  const [state, setState] = useState({ loading: true, error: '', data: null });
+
+  useEffect(() => {
+    if (!garden?.id) return;
+    let cancelled = false;
+    const url = new URL('https://api.open-meteo.com/v1/forecast');
+    url.searchParams.set('latitude', String(HUAIROU_WEATHER.latitude));
+    url.searchParams.set('longitude', String(HUAIROU_WEATHER.longitude));
+    url.searchParams.set('timezone', HUAIROU_WEATHER.timezone);
+    url.searchParams.set('past_days', '2');
+    url.searchParams.set('forecast_days', '3');
+    url.searchParams.set('current', 'temperature_2m,relative_humidity_2m,precipitation,weather_code');
+    url.searchParams.set('hourly', 'precipitation,temperature_2m');
+    url.searchParams.set('daily', 'weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum');
+
+    setState({ loading: true, error: '', data: null });
+    fetch(url.toString())
+      .then((response) => {
+        if (!response.ok) throw new Error(`天气接口返回 ${response.status}`);
+        return response.json();
+      })
+      .then((data) => {
+        if (!cancelled) setState({ loading: false, error: '', data });
+      })
+      .catch((error) => {
+        if (!cancelled) setState({ loading: false, error: error.message || '天气暂时取不到', data: null });
+      });
+
+    return () => { cancelled = true; };
+  }, [garden?.id]);
+
+  return state;
+}
+
+function dateKey(value) {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: HUAIROU_WEATHER.timezone }).format(value);
+}
+
+function daysBetween(fromValue, toValue = new Date()) {
+  if (!fromValue) return null;
+  const from = new Date(fromValue);
+  if (Number.isNaN(from.getTime())) return null;
+  return Math.max(0, Math.floor((toValue.getTime() - from.getTime()) / 86400000));
+}
+
+function sumPrecipitationForDay(weather, key) {
+  const dailyIndex = weather?.daily?.time?.indexOf(key) ?? -1;
+  if (dailyIndex >= 0) return Number(weather.daily.precipitation_sum?.[dailyIndex] || 0);
+  return 0;
+}
+
+function buildGardenBrief({ weather, logs, photos, plants }) {
+  const now = new Date();
+  const todayKey = dateKey(now);
+  const yesterdayKey = dateKey(new Date(now.getTime() - 86400000));
+  const dayBeforeKey = dateKey(new Date(now.getTime() - 86400000 * 2));
+
+  const todayRain = sumPrecipitationForDay(weather, todayKey);
+  const yesterdayRain = sumPrecipitationForDay(weather, yesterdayKey);
+  const dayBeforeRain = sumPrecipitationForDay(weather, dayBeforeKey);
+  const rain2d = yesterdayRain + dayBeforeRain;
+
+  const todayIndex = weather?.daily?.time?.indexOf(todayKey) ?? -1;
+  const todayMax = todayIndex >= 0 ? Number(weather.daily.temperature_2m_max?.[todayIndex] || 0) : null;
+  const todayCode = weather?.current?.weather_code ?? (todayIndex >= 0 ? weather.daily.weather_code?.[todayIndex] : null);
+  const currentTemp = weather?.current?.temperature_2m;
+  const weatherLabel = WEATHER_CODES[todayCode] || '天气正常';
+
+  const waterLogs = logs.filter((log) => log.log_type === 'watered' || String(log.title || '').includes('浇水'));
+  const lastWater = waterLogs[0] || null;
+  const daysSinceWater = daysBetween(lastWater?.happened_at);
+  const daysSincePhoto = daysBetween(photos[0]?.taken_at || photos[0]?.created_at);
   const issuePlant = plants.find((p) => p.status === 'issue');
-  const title = hasPlants ? (issuePlant ? '有一件事值得看一眼。' : '菜地今天还好。') : '菜地还在认识你们。';
-  const body = hasPlants
-    ? issuePlant
-      ? `${issuePlant.name} 还在待观察。下次去，先补拍一张清楚的照片，别急着用药。`
-      : '目前没有待处理的问题。下次去，先拍一张今天的样子就好。'
-    : '先添加几种植物，园丁才知道要照看谁。';
+
+  const reasons = [];
+  let title = '菜地今天还好。';
+  let body = '今天没有明显需要立刻处理的事。下次去，先拍一张现在的样子。';
+  let nextAction = '下次去，先拍一张今天的样子。';
+
+  if (rain2d >= 8) {
+    title = '菜地今天不用急。';
+    body = '这两天怀柔有明显降水，土壤大概率不缺水。先别急着补浇。';
+    nextAction = '下次去，重点看看叶片和排水，不要只看表土。';
+    reasons.push(`近两天降水约 ${rain2d.toFixed(1)}mm。`);
+  } else if (yesterdayRain >= 2 || todayRain >= 2) {
+    title = '菜地今天还好。';
+    body = '最近有雨，今天不需要急着浇水。';
+    nextAction = '下次去，先摸一下表土和盆土，再决定要不要补水。';
+    reasons.push(`最近降水约 ${(yesterdayRain + todayRain).toFixed(1)}mm。`);
+  } else if (daysSinceWater !== null && daysSinceWater >= 6 && rain2d < 2) {
+    title = '该去看一眼了。';
+    body = `已经 ${daysSinceWater} 天没有浇水记录，最近也没什么雨。`;
+    nextAction = '下次去，先看 A 畦和盆栽，必要时补一次透水。';
+    reasons.push(`上次浇水是 ${formatDate(lastWater.happened_at)}。`);
+  } else if (todayMax !== null && todayMax >= 32 && rain2d < 2) {
+    title = '今天会偏热。';
+    body = '怀柔今天温度偏高，浅根植物和盆栽更容易缺水。';
+    nextAction = '下次去，先看番茄、黄瓜和盆里的香草。';
+    reasons.push(`今天最高约 ${Math.round(todayMax)}℃。`);
+  }
+
+  if (issuePlant) {
+    title = '有一件事值得看一眼。';
+    body = `${issuePlant.name} 还在待观察。先补拍一张清楚的照片，别急着用药。`;
+    nextAction = `优先看 ${issuePlant.name}。`;
+    reasons.push('有植物被标记为待观察。');
+  }
+
+  if (!plants.length) {
+    title = '菜地还在认识你们。';
+    body = '先添加几种植物，园丁才知道要照看谁。';
+    nextAction = '先在「生长」里添加第一种植物。';
+  }
+
+  if (daysSincePhoto === null) reasons.push('还没有照片记录。');
+  else if (daysSincePhoto >= 7) reasons.push(`最近一张照片是 ${daysSincePhoto} 天前。`);
+
+  const weatherLine = currentTemp !== undefined
+    ? `怀柔现在约 ${Math.round(Number(currentTemp))}℃，${weatherLabel}。`
+    : `怀柔今日${weatherLabel}。`;
+
+  return { title, body, nextAction, weatherLine, reasons: reasons.slice(0, 3) };
+}
+
+function Today({ garden, beds, plants, logs, photos, setToast, onRefresh }) {
+  const weather = useGardenWeather(garden);
+  const brief = weather.data
+    ? buildGardenBrief({ weather: weather.data, logs, photos, plants })
+    : null;
 
   async function quickLog(type, titleText) {
     const { error } = await supabase.from('logs').insert({
@@ -374,15 +512,15 @@ function Today({ garden, beds, plants, logs, photos, setToast, onRefresh }) {
     <section className="page">
       <div className="hero-card">
         <p className="eyebrow">菜地状态</p>
-        <h2>{title}</h2>
-        <p className="lead">{body}</p>
-        <div className="reason-row"><CloudSun size={17} /><span>天气还没接入。下一步会让这里根据怀柔天气变化。</span></div>
+        <h2>{brief?.title || '正在看今天的天气。'}</h2>
+        <p className="lead">{brief?.body || '正在把怀柔天气和最近记录放在一起看。'}</p>
+        <div className="reason-row"><CloudSun size={17} /><span>{weather.loading ? '正在取怀柔天气。' : weather.error ? '天气暂时取不到，先按最近记录判断。' : brief.weatherLine}</span></div>
       </div>
 
       <div className="quiet-card">
-        <p className="eyebrow">最重要的一件事</p>
-        <h3>{hasPlants ? '下次去，先拍一张现在的样子。' : '先在「生长」里添加第一种植物。'}</h3>
-        <p>园丁记得：{garden.preferences?.style?.join('、') || '这块地要省心、好看、孩子能参与'}。</p>
+        <p className="eyebrow">下次去</p>
+        <h3>{brief?.nextAction || '先拍一张今天的样子。'}</h3>
+        <p>判断依据：{brief?.reasons?.length ? brief.reasons.join(' ') : '天气、浇水记录、最近照片和植物状态。'}</p>
       </div>
 
       {photos.length > 0 && <div className="photo-strip-card">
@@ -644,8 +782,7 @@ function CaptureButton({ garden, beds, plants, onRefresh, setToast }) {
 
   return <>
     <div className="capture-actions" aria-label="添加照片">
-      <label className="capture-button capture-camera"><Camera size={20} />拍照<input className="hidden-input" type="file" accept="image/*" capture="environment" onChange={handleFile} /></label>
-      <label className="capture-button capture-album"><ImageIcon size={20} />相册<input className="hidden-input" type="file" accept="image/*" onChange={handleFile} /></label>
+      <label className="capture-button"><Camera size={20} />拍一下<input className="hidden-input" type="file" accept="image/*" onChange={handleFile} /></label>
     </div>
     {open && <div className="modal-backdrop">
       <div className="capture-modal">

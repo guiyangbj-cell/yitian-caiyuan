@@ -1,14 +1,21 @@
-# 一天菜园 v0.4.3 Photo Source Fix
+# 一天菜园 v0.5
 
-本版基于 v0.4.2 家庭登录版，只修复一个问题：手机端「拍一下」被 capture 属性强制拉起相机，无法从相册选择。
+本版本改动：
 
-## 改动
+1. 首页接入 Open-Meteo，按北京怀柔近似坐标读取天气。
+2. 「今天」页不再显示假状态，改为基于天气、浇水记录、最近照片、植物状态的规则判断。
+3. 「拍一下」恢复成一个按钮，使用 `input type="file" accept="image/*"`，不再强制 `capture`。移动端应由系统提供拍照 / 相册等选择。
+4. 保留 v0.4.2 家庭登录：账号由 Supabase 后台创建，前台只登录。
 
-- 底部主动作拆成两个入口：
-  - 拍照：使用 `capture="environment"`，优先打开相机。
-  - 相册：只使用 `accept="image/*"`，不使用 capture，允许从相册/文件选择图片。
-- 其余功能不变：家庭登录、开园、地图、生长、日志、图片上传。
+部署方式：
 
-## 部署
+- 解压 zip。
+- 上传 `package.json`、`package-lock.json`、`index.html`、`README.md`、`public`、`src` 到 GitHub 仓库根目录。
+- Netlify 自动部署。
 
-覆盖上传到 GitHub 根目录，等待 Netlify Published。
+测试重点：
+
+- 首页是否显示怀柔天气判断。
+- 点「浇水了」后，刷新首页判断是否变化。
+- 手机端点「拍一下」是否能选择拍照或相册。
+- 图片保存后 Supabase `photos` 和 `logs` 是否仍正常写入。
