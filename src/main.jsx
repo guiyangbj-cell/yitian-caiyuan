@@ -111,13 +111,17 @@ function GardenApp({ session }) {
     setGarden(activeGarden);
 
     if (activeGarden) {
-      const [bedsRes, plantsRes, logsRes, speciesRes] = await Promise.all([
+      const [bedsRes, plantsRes, logsRes, photosRes, speciesRes] = await Promise.all([
         supabase.from('beds').select('*').eq('garden_id', activeGarden.id).order('position_order', { ascending: true }),
         supabase.from('plants').select('*, beds(name)').eq('garden_id', activeGarden.id).order('created_at', { ascending: false }),
         supabase.from('logs').select('*').eq('garden_id', activeGarden.id).order('happened_at', { ascending: false }).limit(12),
         supabase.from('photos').select('*').eq('garden_id', activeGarden.id).order('taken_at', { ascending: false }).limit(12),
         supabase.from('plant_species').select('*').order('common_name', { ascending: true }),
       ]);
+      const firstError = bedsRes.error || plantsRes.error || logsRes.error || photosRes.error || speciesRes.error;
+      if (firstError) {
+        setToast(`还没取到完整菜地数据：${firstError.message}`);
+      }
       setBeds(bedsRes.data || []);
       setPlants(plantsRes.data || []);
       setLogs(logsRes.data || []);
