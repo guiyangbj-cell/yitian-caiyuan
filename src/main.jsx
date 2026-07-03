@@ -65,7 +65,7 @@ function App() {
   }
 
   if (authLoading) {
-    return <AppShell><LoadingPage text="正在回到一天菜园。" /></AppShell>;
+    return <AppShell><LoadingPage text="正在打开一天菜园" /></AppShell>;
   }
 
   if (!session) {
@@ -139,7 +139,7 @@ function GardenApp({ session }) {
   }, [session.user.id]);
 
   const content = useMemo(() => {
-    if (loading) return <LoadingPage text="正在看今天的菜地状态。" />;
+    if (loading) return <LoadingPage text="正在看今天" />;
     if (!garden) return <Onboarding session={session} onDone={refreshData} />;
     if (tab === 'today') return <Today garden={garden} beds={beds} plants={plants} logs={logs} photos={photos} onRefresh={refreshData} setToast={setToast} />;
     if (tab === 'map') return <GardenMap garden={garden} beds={beds} plants={plants} onRefresh={refreshData} setToast={setToast} />;
@@ -170,7 +170,7 @@ function Header({ garden, userEmail }) {
         <h1>{garden?.name || '一天菜园'}</h1>
       </div>
       <button className="small-seal" onClick={() => supabase.auth.signOut()} title={userEmail || '退出'}>
-        <LogOut size={14} /> 第一年
+        <LogOut size={14} /> 退出
       </button>
     </header>
   );
@@ -216,7 +216,7 @@ function LoginPage() {
     <section className="login-page">
       <div className="login-card clean-login family-login-card">
         <h1>一天菜园</h1>
-        <p className="login-subtitle">请输入家庭账号。</p>
+        <p className="login-subtitle">使用家人给你的账号登录</p>
 
         <form onSubmit={handleSubmit} className="form-stack">
           <label>
@@ -233,7 +233,7 @@ function LoginPage() {
           </button>
         </form>
 
-        <p className="login-note">账号由家庭管理员创建。</p>
+        <p className="login-note">没有账号的话，请先让家人帮你创建。</p>
       </div>
     </section>
   );
@@ -298,7 +298,7 @@ function Onboarding({ session, onDone }) {
       created_by: userId,
       log_type: 'note',
       title: '一天菜园开园了',
-      auto_text: '从今天开始，这块地会有自己的四季。',
+      auto_text: '从今天开始，记录这块地的四季。',
       happened_at: new Date().toISOString(),
     });
     await supabase.from('ai_memories').insert({
@@ -316,8 +316,8 @@ function Onboarding({ session, onDone }) {
     <section className="page onboarding">
       <div className="hero-card">
         <p className="eyebrow">建一个菜园</p>
-        <h2>这是一天菜园的第一年。</h2>
-        <p className="lead">先把这块地交给我们记住。</p>
+        <h2>先建一块地</h2>
+        <p className="lead">填几个基本信息，之后都可以改。</p>
       </div>
 
       <div className="quiet-card form-stack">
@@ -327,7 +327,7 @@ function Onboarding({ session, onDone }) {
       </div>
 
       <div className="quiet-card">
-        <p className="eyebrow">你希望它更像什么？</p>
+        <p className="eyebrow">这块地先按什么方式照看？</p>
         <div className="chip-grid">
           {options.map((option) => (
             <button key={option} className={preferences.includes(option) ? 'chip active' : 'chip'} onClick={() => togglePreference(option)}>
@@ -339,7 +339,7 @@ function Onboarding({ session, onDone }) {
 
       {error && <p className="error-text">{error}</p>}
       <button className="primary-button" onClick={createGarden} disabled={busy}>
-        {busy ? <Loader2 className="spin" size={18} /> : <CheckCircle2 size={18} />} 完成开园
+        {busy ? <Loader2 className="spin" size={18} /> : <CheckCircle2 size={18} />} 完成
       </button>
     </section>
   );
@@ -438,47 +438,47 @@ function buildGardenBrief({ weather, logs, photos, plants }) {
   const issuePlant = plants.find((p) => p.status === 'issue');
 
   const reasons = [];
-  let title = '菜地今天还好。';
+  let title = '今天还好';
   let body = '今天没有明显需要立刻处理的事。下次去，先拍一张现在的样子。';
   let nextAction = '下次去，先拍一张今天的样子。';
 
   if (rain2d >= 8) {
-    title = '菜地今天不用急。';
-    body = '这两天怀柔有明显降水，土壤大概率不缺水。先别急着补浇。';
-    nextAction = '下次去，重点看看叶片和排水，不要只看表土。';
+    title = '今天不用急';
+    body = '这两天怀柔有雨，先不用急着浇水。';
+    nextAction = '下次去，看看叶片和排水。';
     reasons.push(`近两天降水约 ${rain2d.toFixed(1)}mm。`);
   } else if (yesterdayRain >= 2 || todayRain >= 2) {
-    title = '菜地今天还好。';
-    body = '最近有雨，今天不需要急着浇水。';
-    nextAction = '下次去，先摸一下表土和盆土，再决定要不要补水。';
-    reasons.push(`最近降水约 ${(yesterdayRain + todayRain).toFixed(1)}mm。`);
+    title = '今天还好';
+    body = '最近记录有雨，今天不需要急着浇水。';
+    nextAction = '下次去，摸一下表土，再决定要不要补水。';
+    reasons.push(`最近记录降水约 ${(yesterdayRain + todayRain).toFixed(1)}mm。`);
   } else if (daysSinceWater !== null && daysSinceWater >= 6 && rain2d < 2) {
-    title = '该去看一眼了。';
-    body = `已经 ${daysSinceWater} 天没有浇水记录，最近也没什么雨。`;
-    nextAction = '下次去，先看 A 畦和盆栽，必要时补一次透水。';
+    title = '该去看看了';
+    body = `已经 ${daysSinceWater} 天没有浇水记录，最近记录也没什么雨。`;
+    nextAction = '下次去，先看 A 畦和盆栽。';
     reasons.push(`上次浇水是 ${formatDate(lastWater.happened_at)}。`);
   } else if (todayMax !== null && todayMax >= 32 && rain2d < 2) {
-    title = '今天会偏热。';
-    body = '怀柔今天温度偏高，浅根植物和盆栽更容易缺水。';
+    title = '今天有点热';
+    body = '怀柔今天偏热，盆栽和浅根植物要多看一眼。';
     nextAction = '下次去，先看番茄、黄瓜和盆里的香草。';
     reasons.push(`今天最高约 ${Math.round(todayMax)}℃。`);
   }
 
   if (issuePlant) {
-    title = '有一件事值得看一眼。';
-    body = `${issuePlant.name} 还在待观察。先补拍一张清楚的照片，别急着用药。`;
+    title = '有一件事要看';
+    body = `${issuePlant.name} 还在待观察。先补拍一张清楚的照片。`;
     nextAction = `优先看 ${issuePlant.name}。`;
     reasons.push('有植物被标记为待观察。');
   }
 
   if (!plants.length) {
-    title = '菜地还在认识你们。';
-    body = '先添加几种植物，园丁才知道要照看谁。';
+    title = '先从几种植物开始';
+    body = '把种下的东西加进来，之后才好记录。';
     nextAction = '先在「生长」里添加第一种植物。';
   }
 
   if (daysSincePhoto === null) reasons.push('还没有照片记录。');
-  else if (daysSincePhoto >= 7) reasons.push(`最近一张照片是 ${daysSincePhoto} 天前。`);
+  else if (daysSincePhoto >= 7) reasons.push(`最近记录一张照片是 ${daysSincePhoto} 天前。`);
 
   const weatherLine = currentTemp !== undefined
     ? `怀柔现在约 ${Math.round(Number(currentTemp))}℃，${weatherLabel}。`
@@ -503,7 +503,7 @@ function Today({ garden, beds, plants, logs, photos, setToast, onRefresh }) {
     });
     if (error) setToast(`这次还没记上：${error.message}`);
     else {
-      setToast('记下了。下次判断会把这次记录算进去。');
+      setToast('已记录。');
       onRefresh();
     }
   }
@@ -511,20 +511,20 @@ function Today({ garden, beds, plants, logs, photos, setToast, onRefresh }) {
   return (
     <section className="page">
       <div className="hero-card">
-        <p className="eyebrow">菜地状态</p>
-        <h2>{brief?.title || '正在看今天的天气。'}</h2>
-        <p className="lead">{brief?.body || '正在把怀柔天气和最近记录放在一起看。'}</p>
-        <div className="reason-row"><CloudSun size={17} /><span>{weather.loading ? '正在取怀柔天气。' : weather.error ? '天气暂时取不到，先按最近记录判断。' : brief.weatherLine}</span></div>
+        <p className="eyebrow">今天</p>
+        <h2>{brief?.title || '正在看今天'}</h2>
+        <p className="lead">{brief?.body || '正在整理天气和最近记录记录。'}</p>
+        <div className="reason-row"><CloudSun size={17} /><span>{weather.loading ? '正在获取怀柔天气。' : weather.error ? '天气暂时取不到，先看最近记录记录。' : brief.weatherLine}</span></div>
       </div>
 
       <div className="quiet-card">
-        <p className="eyebrow">下次去</p>
+        <p className="eyebrow">下次看看</p>
         <h3>{brief?.nextAction || '先拍一张今天的样子。'}</h3>
-        <p>判断依据：{brief?.reasons?.length ? brief.reasons.join(' ') : '天气、浇水记录、最近照片和植物状态。'}</p>
+        <p>依据：{brief?.reasons?.length ? brief.reasons.join(' ') : '天气、浇水记录、最近记录照片和植物状态。'}</p>
       </div>
 
       {photos.length > 0 && <div className="photo-strip-card">
-        <p className="eyebrow">最近照片</p>
+        <p className="eyebrow">最近记录照片</p>
         <div className="photo-strip">
           {photos.slice(0, 4).map((photo) => <PhotoThumb key={photo.id} photo={photo} />)}
         </div>
@@ -537,8 +537,8 @@ function Today({ garden, beds, plants, logs, photos, setToast, onRefresh }) {
       </div>
 
       <div className="child-card">
-        <p className="eyebrow">最近</p>
-        {logs.length ? logs.map((log) => <p key={log.id}>· {formatDate(log.happened_at)}｜{log.title}</p>) : <p>菜地还没留下记录。先拍一张今天的样子。</p>}
+        <p className="eyebrow">最近记录</p>
+        {logs.length ? logs.map((log) => <p key={log.id}>· {formatDate(log.happened_at)}｜{log.title}</p>) : <p>还没有记录。先拍一张，或者记一次浇水。</p>}
       </div>
     </section>
   );
@@ -553,25 +553,25 @@ function GardenMap({ beds, plants, setToast, onRefresh }) {
     const gardenId = beds[0]?.garden_id || plants[0]?.garden_id;
     if (!gardenId) return;
     const { error } = await supabase.from('beds').insert({ garden_id: gardenId, name, sunlight: '不确定', water_access: '不确定', bed_type: '混合', position_order: beds.length + 1 });
-    if (error) setToast(`新区还没建好：${error.message}`);
-    else { setToast('新区建好了。以后再慢慢细化。'); setAdding(false); setName(''); onRefresh(); }
+    if (error) setToast(`还没添加成功：${error.message}`);
+    else { setToast('已添加。'); setAdding(false); setName(''); onRefresh(); }
   }
 
   return (
     <section className="page">
-      <div className="section-title"><h2>地图</h2><p>这块地是怎么被安排的。</p></div>
+      <div className="section-title"><h2>地图</h2><p>看这块地怎么安排。</p></div>
       <div className="map-grid">
         {beds.map((bed) => {
-          const bedPlants = plants.filter((p) => p.bed_id === bed.id).map((p) => p.name).join('、') || '还没添加植物';
+          const bedPlants = plants.filter((p) => p.bed_id === bed.id).map((p) => p.name).join('、') || '还没有植物';
           return <div className="bed-card" key={bed.id}>
             <div className="bed-top"><h3>{bed.name}</h3><span>{bed.sunlight}</span></div>
-            <p className="bed-detail">现在：{bedPlants}</p>
+            <p className="bed-detail">种着：{bedPlants}</p>
             <p>水源：{bed.water_access}</p>
-            <p className="soft-note">{bed.bed_type === '给一天观察' ? '适合放一盆薄荷，或者种几株向日葵。' : '先保持简单，后面再让园丁给布局建议。'}</p>
+            <p className="soft-note">{bed.bed_type === '给一天观察' ? '适合放一盆薄荷，或者种几株向日葵。' : '先这样记着，之后再慢慢调整。'}</p>
           </div>;
         })}
       </div>
-      {adding ? <div className="quiet-card form-row"><input value={name} onChange={(e) => setName(e.target.value)} placeholder="比如：香草区" /><button onClick={addBed}>保存</button></div> : <button className="secondary-button" onClick={() => setAdding(true)}><Plus size={16}/> 建一个新区</button>}
+      {adding ? <div className="quiet-card form-row"><input value={name} onChange={(e) => setName(e.target.value)} placeholder="比如：香草区" /><button onClick={addBed}>保存</button></div> : <button className="secondary-button" onClick={() => setAdding(true)}><Plus size={16}/> 添加区域</button>}
     </section>
   );
 }
@@ -598,30 +598,30 @@ function Growth({ garden, beds, plants, species, setToast, onRefresh }) {
       source_type: 'unknown',
     });
     if (error) setToast(`还没添加成功：${error.message}`);
-    else { setToast('记下了。以后它的照片和记录都会放在这里。'); setAdding(false); setName(''); onRefresh(); }
+    else { setToast('已添加。以后照片和记录都会放在这里。'); setAdding(false); setName(''); onRefresh(); }
   }
 
   return (
     <section className="page">
-      <div className="section-title"><h2>生长</h2><p>{plants.length ? `${plants.length} 种植物正在被记住。` : '它们长到哪了。'}</p></div>
+      <div className="section-title"><h2>生长</h2><p>{plants.length ? `${plants.length} 种植物正在记录。` : '看看最近在长什么。'}</p></div>
       {plants.length ? <div className="plant-list">
         {plants.map((plant) => <div className="plant-card" key={plant.id}>
           <div className="plant-icon"><Sprout size={22}/></div>
           <div>
-            <div className="plant-head"><h3>{plant.name}</h3><span>{plant.status === 'issue' ? '看一眼' : '安心'}</span></div>
+            <div className="plant-head"><h3>{plant.name}</h3><span>{plant.status === 'issue' ? '待观察' : '正常'}</span></div>
             <p className="phase">{STAGE_LABELS[plant.stage] || '不确定'}</p>
             <p>区域：{plant.beds?.name || '未分区'}</p>
-            <p>下次：先拍一张现在的样子。</p>
+            <p>下次去，拍一张近照。</p>
           </div>
           <ChevronRight className="chevron" size={18}/>
         </div>)}
-      </div> : <EmptyState title="这块地还空着。" body="先添加一种植物，或者拍一张让园丁看看。" />}
+      </div> : <EmptyState title="还没有植物" body="先添加一种植物，之后再慢慢记录。" />}
 
       {adding && <div className="quiet-card form-stack">
         <label>植物名<input value={name} onChange={(e) => setName(e.target.value)} placeholder="比如：A 畦番茄" /></label>
         <label>区域<select value={bedId} onChange={(e) => setBedId(e.target.value)}>{beds.map((bed) => <option key={bed.id} value={bed.id}>{bed.name}</option>)}</select></label>
         <label>阶段<select value={stage} onChange={(e) => setStage(e.target.value)}>{Object.entries(STAGE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-        <button className="primary-button" onClick={addPlant}>添加</button>
+        <button className="primary-button" onClick={addPlant}>保存</button>
       </div>}
       {!adding && <button className="secondary-button" onClick={() => setAdding(true)}><Plus size={16}/> 添加植物</button>}
     </section>
@@ -630,28 +630,28 @@ function Growth({ garden, beds, plants, species, setToast, onRefresh }) {
 
 function Seasons({ plants, logs, photos }) {
   const highlights = [];
-  if (plants.length) highlights.push(`${plants.length} 种植物被记住了。`);
-  if (logs.length) highlights.push(`这周有 ${logs.length} 条新记录。`);
-  if (photos.length) highlights.push(`这周有 ${photos.length} 张照片加入四季。`);
-  if (!highlights.length) highlights.push('第一张照片会成为这一年的开头。');
+  if (plants.length) highlights.push(`${plants.length} 种植物正在记录。`);
+  if (logs.length) highlights.push(`这周有 ${logs.length} 条记录。`);
+  if (photos.length) highlights.push(`这周有 ${photos.length} 张照片。`);
+  if (!highlights.length) highlights.push('第一张照片，会成为这一年的开头。');
 
   return (
     <section className="page">
       <div className="letter-card">
-        <p className="eyebrow">菜地来信</p>
-        <h2>{logs.length || photos.length ? '这周，菜地有了新的记录。' : '四季还没开始。'}</h2>
+        <p className="eyebrow">四季</p>
+        <h2>{logs.length || photos.length ? '这周有新记录' : '四季还没开始'}</h2>
         <ul>{highlights.map((note) => <li key={note}>{note}</li>)}</ul>
       </div>
       {photos.length > 0 && <div className="quiet-card">
-        <p className="eyebrow">这一周的照片</p>
+        <p className="eyebrow">最近照片</p>
         <div className="photo-grid">
           {photos.slice(0, 6).map((photo) => <PhotoThumb key={photo.id} photo={photo} />)}
         </div>
       </div>}
       <div className="quiet-card">
-        <p className="eyebrow">封季预览</p>
+        <p className="eyebrow">夏天的小结</p>
         <h3>2026 夏｜一天菜园</h3>
-        <p>这个夏天，菜地没有被完美管理。但它被你们看见了很多次。</p>
+        <p>不用完美管理。常去看看，就已经很好。</p>
       </div>
     </section>
   );
@@ -726,12 +726,12 @@ function CaptureButton({ garden, beds, plants, onRefresh, setToast }) {
       const bedId = targetType === 'bed' ? targetId || null : null;
       const plantId = targetType === 'plant' ? targetId || null : null;
       const caption = targetType === 'plant'
-        ? `今天的${plants.find((p) => p.id === targetId)?.name || '植物'}，记住了。`
+        ? `今天的${plants.find((p) => p.id === targetId)?.name || '植物'}，已保存。`
         : targetType === 'bed'
-          ? `今天的${beds.find((b) => b.id === targetId)?.name || '这块地'}，留下来了。`
+          ? `今天的${beds.find((b) => b.id === targetId)?.name || '这块地'}，已保存。`
           : targetType === 'child'
-            ? '一天的小发现，记住了。'
-            : '今天的菜地，留下来了。';
+            ? '一天的小发现，已保存。'
+            : '今天的菜地，已保存。';
 
       const { data: photoData, error: photoError } = await supabase.from('photos').insert({
         id: photoId,
@@ -775,7 +775,7 @@ function CaptureButton({ garden, beds, plants, onRefresh, setToast }) {
       close();
       onRefresh();
     } catch (error) {
-      setToast(`这张照片还没保存上：${error.message}`);
+      setToast(`这张照片没保存成功：${error.message}`);
       setBusy(false);
     }
   }
@@ -787,10 +787,10 @@ function CaptureButton({ garden, beds, plants, onRefresh, setToast }) {
     {open && <div className="modal-backdrop">
       <div className="capture-modal">
         <div className="modal-head">
-          <div><p className="eyebrow">拍一下</p><h3>这张照片记到哪里？</h3></div>
+          <div><p className="eyebrow">拍一下</p><h3>保存到哪里？</h3></div>
           <button className="icon-button" onClick={close}><X size={18} /></button>
         </div>
-        {preview && <img className="capture-preview" src={preview} alt="准备保存的菜地照片" />}
+        {preview && <img className="capture-preview" src={preview} alt="菜地照片" />}
         <div className="form-stack">
           <label>归属
             <select value={`${targetType}:${targetId}`} onChange={(e) => {
@@ -804,8 +804,8 @@ function CaptureButton({ garden, beds, plants, onRefresh, setToast }) {
               <option value="child:">一天的小发现</option>
             </select>
           </label>
-          <button className="primary-button" onClick={uploadPhoto} disabled={busy}>{busy ? <Loader2 className="spin" size={18} /> : <ImageIcon size={18} />} 保存到四季</button>
-          <button className="secondary-button" onClick={close} disabled={busy}>先不保存</button>
+          <button className="primary-button" onClick={uploadPhoto} disabled={busy}>{busy ? <Loader2 className="spin" size={18} /> : <ImageIcon size={18} />} 保存</button>
+          <button className="secondary-button" onClick={close} disabled={busy}>取消</button>
         </div>
       </div>
     </div>}
@@ -858,7 +858,7 @@ function LoadingPage({ text }) {
 }
 
 function SetupMissing() {
-  return <section className="login-page"><div className="login-card"><h1>还差 Supabase 配置。</h1><p>请在 Netlify 添加 VITE_SUPABASE_URL 和 VITE_SUPABASE_ANON_KEY 后重新部署。</p></div></section>;
+  return <section className="login-page"><div className="login-card"><h1>还差一点配置</h1><p>请在 Netlify 添加 Supabase 环境变量后重新部署。</p></div></section>;
 }
 
 function Toast({ text, onClose }) {

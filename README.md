@@ -1,21 +1,38 @@
-# 一天菜园 v0.5
+# 一天菜园 v0.6 UI Refresh
 
-本版本改动：
+本版本基于 v0.5，做视觉/UI 与中文文案重构。
 
-1. 首页接入 Open-Meteo，按北京怀柔近似坐标读取天气。
-2. 「今天」页不再显示假状态，改为基于天气、浇水记录、最近照片、植物状态的规则判断。
-3. 「拍一下」恢复成一个按钮，使用 `input type="file" accept="image/*"`，不再强制 `capture`。移动端应由系统提供拍照 / 相册等选择。
-4. 保留 v0.4.2 家庭登录：账号由 Supabase 后台创建，前台只登录。
+## 保留
 
-部署方式：
+- Supabase 家庭账号登录
+- 开园
+- 地图
+- 生长
+- 四季
+- 图片上传
+- Open-Meteo 天气与今日状态判断
 
-- 解压 zip。
-- 上传 `package.json`、`package-lock.json`、`index.html`、`README.md`、`public`、`src` 到 GitHub 仓库根目录。
-- Netlify 自动部署。
+## 主要改动
 
-测试重点：
+- 统一视觉方向：米白背景、苔藓绿、土壤棕、炭黑文字、大圆角卡片。
+- 页面文案改成更自然的中文 App 语境。
+- 顶部按钮从“第一年”改为“退出”。
+- 「拍一下」保持一个入口。
+- 今天、地图、生长、四季的说明文案减少解释感。
 
-- 首页是否显示怀柔天气判断。
-- 点「浇水了」后，刷新首页判断是否变化。
-- 手机端点「拍一下」是否能选择拍照或相册。
-- 图片保存后 Supabase `photos` 和 `logs` 是否仍正常写入。
+## 上传
+
+解压后，把以下内容上传并覆盖 GitHub 根目录：
+
+- package.json
+- package-lock.json
+- index.html
+- README.md
+- public
+- src
+
+Commit message 建议：
+
+```text
+refresh ui and copy
+```
