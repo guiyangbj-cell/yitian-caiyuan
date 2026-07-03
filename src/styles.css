@@ -626,3 +626,38 @@ input:focus, select:focus {
   margin-bottom: 14px;
   background: #e7dfd0;
 }
+
+.clean-login h1 {
+  font-size: 36px;
+  letter-spacing: -0.04em;
+}
+
+.login-subtitle {
+  margin-bottom: 18px;
+}
+
+.login-actions {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+  text-align: center;
+}
+
+.text-button {
+  border: 0;
+  background: transparent;
+  color: #252820;
+  font: inherit;
+  font-weight: 650;
+  padding: 8px;
+}
+
+.text-button.muted {
+  color: #777267;
+  font-weight: 500;
+  font-size: 14px;
+}
+
+.text-button:disabled {
+  opacity: .55;
+}

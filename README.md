@@ -1,4 +1,4 @@
-# 一天菜园 v0.4 Password Login
+# 一天菜园 v0.4.1 Password Login
 
 本版本将登录方式从 Magic Link 改为邮箱 + 密码。
 
