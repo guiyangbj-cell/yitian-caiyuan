@@ -1,47 +1,20 @@
-# 一天菜园 v0.3.1 Hotfix
+# 一天菜园 v0.4 Password Login
 
-修复 v0.3 中登录后一直停留在“正在看今天的菜地状态。”的问题。
+本版本将登录方式从 Magic Link 改为邮箱 + 密码。
 
-原因：照片数据查询加入后，Promise.all 返回值解构少写了 photosRes，导致已登录用户刷新数据时报错并卡在 loading。
+## 变化
 
-继续保留 v0.3 的图片上传能力。
+- 登录页支持“登录 / 创建账号”切换
+- 登录调用 Supabase `signInWithPassword`
+- 创建账号调用 Supabase `signUp`
+- 保留 v0.3.1 图片上传与数据链路
+- 不再依赖 Magic Link 跨设备跳转
 
-# 一天菜园 v0.3.1 Photo Upload
+## Supabase 设置建议
 
-本版本在 v0.2 Auth/Data 基础上新增「拍一下」真实图片上传：
+Authentication → Sign In / Providers → Email：
 
-- 使用 Supabase Auth 登录
-- 从 Supabase 读取/写入菜园、区域、植物、记录
-- 点击「拍一下」选择或拍摄图片
-- 前端将图片压缩到长边约 1600px
-- 上传到 Supabase Storage `garden-photos`
-- 在 `photos` 表写入图片元数据
-- 在 `logs` 表写入 `photo_taken` 或 `child_discovery` 记录
-- 今天页和四季页展示最近照片
+- Enable email provider：开启
+- Minimum password length：6 或更高
 
-暂未接入豆包视觉识别；v0.4 会在图片上传链路稳定后再接入视觉分析。
-
-## 环境变量
-
-Netlify 需要配置：
-
-```bash
-VITE_SUPABASE_URL=你的 Supabase Project URL
-VITE_SUPABASE_ANON_KEY=你的 Supabase publishable/anon key
-```
-
-不要把 service_role、DeepSeek、豆包 API Key 放到前端。
-
-## Netlify 构建
-
-Build command:
-
-```bash
-npm run build
-```
-
-Publish directory:
-
-```bash
-dist
-```
+如果创建账号后提示需要确认邮箱，请先点邮箱确认链接，再回到 App 用邮箱密码登录。

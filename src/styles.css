@@ -388,6 +388,37 @@ input:focus, select:focus {
   margin: 0;
 }
 
+.auth-toggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 18px 0 16px;
+  padding: 5px;
+  border-radius: 999px;
+  background: rgba(31,33,29,.06);
+}
+
+.auth-toggle button {
+  border: 0;
+  border-radius: 999px;
+  padding: 10px 12px;
+  background: transparent;
+  color: #69675c;
+}
+
+.auth-toggle button.active {
+  background: #252820;
+  color: #f9f4ea;
+}
+
+.success-text {
+  color: #3c5131 !important;
+  background: #e3ead8;
+  border-radius: 14px;
+  padding: 10px 12px;
+  margin: 0;
+}
+
 .success-box {
   display: flex;
   gap: 12px;

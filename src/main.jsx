@@ -175,28 +175,78 @@ function Header({ garden, userEmail }) {
   );
 }
 
+function friendlyAuthError(message) {
+  const text = String(message || '');
+  if (text.includes('Invalid login credentials')) return '邮箱或密码不对，再看一眼。';
+  if (text.includes('Email not confirmed')) return '这个邮箱还没有确认。先去邮箱点一次确认链接，再回来登录。';
+  if (text.includes('User already registered')) return '这个邮箱已经有账号了，直接登录就好。';
+  if (text.includes('Password should be at least')) return '密码至少 6 位。';
+  if (text.includes('rate limit')) return '操作太频繁了，先等一会儿再试。';
+  if (text.includes('Signup is disabled')) return '当前项目暂时没有开启注册。去 Supabase 的 Auth 设置里打开用户注册。';
+  return text || '这次没有成功，可以再试一次。';
+}
+
 function LoginPage() {
+  const [mode, setMode] = useState('signin');
   const [email, setEmail] = useState('');
-  const [sent, setSent] = useState(false);
+  const [password, setPassword] = useState('');
+  const [password2, setPassword2] = useState('');
+  const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
-  async function handleLogin(event) {
+  async function handleSubmit(event) {
     event.preventDefault();
     setError('');
+    setMessage('');
+
+    if (password.length < 6) {
+      setError('密码至少 6 位。');
+      return;
+    }
+
+    if (mode === 'signup' && password !== password2) {
+      setError('两次输入的密码不一样。');
+      return;
+    }
+
     setBusy(true);
 
-    const { error: signInError } = await supabase.auth.signInWithOtp({
+    if (mode === 'signin') {
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      setBusy(false);
+      if (signInError) {
+        setError(friendlyAuthError(signInError.message));
+        return;
+      }
+      return;
+    }
+
+    const { data, error: signUpError } = await supabase.auth.signUp({
       email,
-      options: { emailRedirectTo: window.location.origin },
+      password,
+      options: {
+        emailRedirectTo: window.location.origin,
+      },
     });
 
     setBusy(false);
-    if (signInError) {
-      setError(signInError.message);
+    if (signUpError) {
+      setError(friendlyAuthError(signUpError.message));
       return;
     }
-    setSent(true);
+
+    if (data?.session) {
+      setMessage('账号创建好了。正在回到一天菜园。');
+    } else {
+      setMessage('账号创建好了。如果邮箱里有确认邮件，点一下确认链接；确认后回来用邮箱和密码登录。');
+      setMode('signin');
+      setPassword('');
+      setPassword2('');
+    }
   }
 
   return (
@@ -204,27 +254,38 @@ function LoginPage() {
       <div className="login-card">
         <p className="eyebrow">回到一天菜园</p>
         <h1>这是你们家的菜地。</h1>
-        <p>登录后，照片、记录和四季都会留在这里。</p>
-        {sent ? (
-          <div className="success-box">
-            <CheckCircle2 size={24} />
-            <div>
-              <h3>邮件已经发出。</h3>
-              <p>打开邮箱里的登录链接，就能回到一天菜园。</p>
-            </div>
-          </div>
-        ) : (
-          <form onSubmit={handleLogin} className="form-stack">
+        <p>用邮箱和密码登录。照片、记录和四季都会留在这里。</p>
+
+        <div className="auth-toggle" role="tablist" aria-label="登录方式">
+          <button className={mode === 'signin' ? 'active' : ''} type="button" onClick={() => { setMode('signin'); setError(''); setMessage(''); }}>
+            登录
+          </button>
+          <button className={mode === 'signup' ? 'active' : ''} type="button" onClick={() => { setMode('signup'); setError(''); setMessage(''); }}>
+            创建账号
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="form-stack">
+          <label>
+            邮箱
+            <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" type="email" autoComplete="email" required />
+          </label>
+          <label>
+            密码
+            <input value={password} onChange={(e) => setPassword(e.target.value)} placeholder="至少 6 位" type="password" autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} required />
+          </label>
+          {mode === 'signup' && (
             <label>
-              邮箱
-              <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" type="email" required />
+              再输一次密码
+              <input value={password2} onChange={(e) => setPassword2(e.target.value)} placeholder="和上面一样" type="password" autoComplete="new-password" required />
             </label>
-            {error && <p className="error-text">{error}</p>}
-            <button className="primary-button" disabled={busy} type="submit">
-              {busy ? <Loader2 className="spin" size={18} /> : <Mail size={18} />} 继续
-            </button>
-          </form>
-        )}
+          )}
+          {error && <p className="error-text">{error}</p>}
+          {message && <p className="success-text">{message}</p>}
+          <button className="primary-button" disabled={busy} type="submit">
+            {busy ? <Loader2 className="spin" size={18} /> : <Mail size={18} />} {mode === 'signin' ? '登录' : '创建账号'}
+          </button>
+        </form>
       </div>
     </section>
   );
