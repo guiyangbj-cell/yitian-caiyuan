@@ -1,0 +1,10 @@
+{
+  "name": "一天菜园",
+  "short_name": "一天菜园",
+  "description": "记录一块地，照看一家人的四季。",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F3EFE6",
+  "theme_color": "#F3EFE6",
+  "icons": []
+}
