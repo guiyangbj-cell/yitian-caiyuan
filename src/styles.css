@@ -253,21 +253,34 @@ button {
   padding-left: 20px;
 }
 
-.capture-button {
+ .capture-actions {
   position: absolute;
   left: 50%;
   bottom: 78px;
   transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  z-index: 3;
+}
+
+.capture-button {
   border: none;
   border-radius: 999px;
-  padding: 15px 26px;
+  padding: 15px 20px;
   background: #252820;
   color: #f9f4ea;
   display: inline-flex;
   align-items: center;
-  gap: 9px;
+  gap: 8px;
   box-shadow: 0 12px 34px rgba(31, 33, 29, 0.25);
-  z-index: 3;
+  white-space: nowrap;
+}
+
+.capture-album {
+  background: rgba(248, 242, 232, .96);
+  color: #252820;
+  border: 1px solid rgba(31, 33, 29, .12);
 }
 
 .tabbar {

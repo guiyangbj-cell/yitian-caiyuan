@@ -643,7 +643,10 @@ function CaptureButton({ garden, beds, plants, onRefresh, setToast }) {
   }
 
   return <>
-    <label className="capture-button"><Camera size={20} />拍一下<input className="hidden-input" type="file" accept="image/*" capture="environment" onChange={handleFile} /></label>
+    <div className="capture-actions" aria-label="添加照片">
+      <label className="capture-button capture-camera"><Camera size={20} />拍照<input className="hidden-input" type="file" accept="image/*" capture="environment" onChange={handleFile} /></label>
+      <label className="capture-button capture-album"><ImageIcon size={20} />相册<input className="hidden-input" type="file" accept="image/*" onChange={handleFile} /></label>
+    </div>
     {open && <div className="modal-backdrop">
       <div className="capture-modal">
         <div className="modal-head">

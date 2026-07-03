@@ -1,37 +1,14 @@
-# 一天菜园 v0.4.2 家庭登录版
+# 一天菜园 v0.4.3 Photo Source Fix
 
-这版把登录收敛为家庭私有 App 的稳定方案：
+本版基于 v0.4.2 家庭登录版，只修复一个问题：手机端「拍一下」被 capture 属性强制拉起相机，无法从相册选择。
 
-- 前台只保留邮箱 + 密码登录。
-- 不开放注册。
-- 不提供忘记密码 / 设置密码。
-- 账号需要在 Supabase Dashboard 后台手动创建。
-- 保留 v0.3.1 的开园、地图、生长、四季、日志、图片上传功能。
+## 改动
 
-## 为什么这样做
-
-一天菜园是家庭私有 App，不是大众产品。v0.1 阶段不需要开放注册，也不需要触发 Supabase 默认邮件服务，避免 Magic Link、OTP、重置密码、注册邮件等 rate limit 问题。
-
-## 使用前请在 Supabase 手动创建账号
-
-1. Supabase → Authentication → Users
-2. 删除之前测试过的用户，避免旧 Magic Link / 半注册状态干扰
-3. Add user / Create user
-4. 输入邮箱和密码
-5. 勾选 Auto confirm user / Confirm email（如果有）
-6. 保存
-
-然后在 App 里用这个邮箱和密码登录。
+- 底部主动作拆成两个入口：
+  - 拍照：使用 `capture="environment"`，优先打开相机。
+  - 相册：只使用 `accept="image/*"`，不使用 capture，允许从相册/文件选择图片。
+- 其余功能不变：家庭登录、开园、地图、生长、日志、图片上传。
 
 ## 部署
 
-覆盖 GitHub 根目录文件：
-
-- package.json
-- package-lock.json
-- index.html
-- README.md
-- public
-- src
-
-等待 Netlify Published。
+覆盖上传到 GitHub 根目录，等待 Netlify Published。
